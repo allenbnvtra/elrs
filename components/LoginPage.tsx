@@ -7,27 +7,39 @@ import {
   Eye,
   EyeOff,
   ArrowRight,
-  BookOpen,
-  Video,
   FileText,
-  CheckCircle2,
+  Video,
+  AlertCircle,
+  Loader2,
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
+import { useAuth } from "@/contexts/authContext";
 
 const LoginPage: React.FC = () => {
+  const { login } = useAuth();
   const [showPassword, setShowPassword] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState("");
 
   const primaryGradient = {
     background: "linear-gradient(135deg, #7d1a1a 0%, #5a1313 100%)",
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Roles are managed at the backend; simply post credentials here
-    console.log("Authenticating...", { email, password });
+    setError("");
+    setIsLoading(true);
+
+    try {
+      await login(email, password);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Login failed");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -110,26 +122,19 @@ const LoginPage: React.FC = () => {
       <div className="flex-1 flex items-center justify-center p-8 md:p-16 bg-[#f8f9fa]">
         <div className="w-full max-w-md">
           <div className="mb-10 text-center md:text-left">
-            <div className="flex w-full justify-center bg-white/20 p-2 rounded-lg backdrop-blur-sm mb-3">
+            <div className="flex w-full justify-center md:justify-start gap-4 bg-white/20 rounded-lg mb-4">
               <Image
                 src="/engr.png"
                 alt="Logo"
-                width={80}
-                height={80}
-                className="object-contain"
-              />
-              <Image
-                src="/sl.png"
-                alt="Logo"
-                width={80}
-                height={80}
-                className="object-contain"
+                width={60}
+                height={60}
+                className="object-contain opacity-80"
               />
               <Image
                 src="/syslogo.png"
                 alt="Logo"
-                width={60}
-                height={60}
+                width={50}
+                height={50}
                 className="object-contain"
               />
             </div>
@@ -140,6 +145,14 @@ const LoginPage: React.FC = () => {
               Please enter your credentials to access the system.
             </p>
           </div>
+
+          {/* Error Message */}
+          {error && (
+            <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl flex items-start gap-3">
+              <AlertCircle className="text-red-600 flex-shrink-0 mt-0.5" size={18} />
+              <p className="text-sm text-red-800">{error}</p>
+            </div>
+          )}
 
           <form onSubmit={handleSubmit} className="space-y-6">
             {/* Email Input */}
@@ -158,7 +171,8 @@ const LoginPage: React.FC = () => {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="e.g. example@email.com"
-                  className="w-full bg-white border border-[#dee2e6] rounded-xl py-4 pl-12 pr-4 text-[#1a1a1a] focus:outline-none focus:ring-2 focus:ring-[#7d1a1a]/20 focus:border-[#7d1a1a] transition-all shadow-sm"
+                  disabled={isLoading}
+                  className="w-full bg-white border border-[#dee2e6] rounded-xl py-4 pl-12 pr-4 text-[#1a1a1a] focus:outline-none focus:ring-2 focus:ring-[#7d1a1a]/20 focus:border-[#7d1a1a] transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
                 />
               </div>
             </div>
@@ -169,12 +183,12 @@ const LoginPage: React.FC = () => {
                 <label className="text-sm font-semibold text-[#1a1a1a]">
                   Password
                 </label>
-                <a
-                  href="#"
+                <Link
+                  href="/forgot-password"
                   className="text-sm font-medium text-[#a02323] hover:underline"
                 >
                   Forgot?
-                </a>
+                </Link>
               </div>
               <div className="relative group">
                 <Lock
@@ -187,12 +201,14 @@ const LoginPage: React.FC = () => {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
-                  className="w-full bg-white border border-[#dee2e6] rounded-xl py-4 pl-12 pr-12 text-[#1a1a1a] focus:outline-none focus:ring-2 focus:ring-[#7d1a1a]/20 focus:border-[#7d1a1a] transition-all shadow-sm"
+                  disabled={isLoading}
+                  className="w-full bg-white border border-[#dee2e6] rounded-xl py-4 pl-12 pr-12 text-[#1a1a1a] focus:outline-none focus:ring-2 focus:ring-[#7d1a1a]/20 focus:border-[#7d1a1a] transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-4 top-1/2 -translate-y-1/2 text-[#6c757d] hover:text-[#1a1a1a]"
+                  disabled={isLoading}
+                  className="absolute right-4 top-1/2 -translate-y-1/2 text-[#6c757d] hover:text-[#1a1a1a] disabled:opacity-50"
                 >
                   {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
                 </button>
@@ -202,21 +218,34 @@ const LoginPage: React.FC = () => {
             {/* Submit Button */}
             <button
               type="submit"
-              className="w-full group flex items-center justify-center gap-2 py-4 px-6 rounded-xl text-white font-bold text-lg transition-all active:scale-[0.98] shadow-[0_4px_16px_rgba(125,26,26,0.2)] hover:shadow-[0_8px_24px_rgba(125,26,26,0.3)]"
+              disabled={isLoading}
+              className="w-full group flex items-center justify-center gap-2 py-4 px-6 rounded-xl text-white font-bold text-lg transition-all active:scale-[0.98] shadow-[0_4px_16px_rgba(125,26,26,0.2)] hover:shadow-[0_8px_24px_rgba(125,26,26,0.3)] disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100"
               style={primaryGradient}
             >
-              <span>Sign In</span>
-              <ArrowRight
-                size={20}
-                className="group-hover:translate-x-1 transition-transform"
-              />
+              {isLoading ? (
+                <>
+                  <Loader2 size={20} className="animate-spin" />
+                  <span>Signing In...</span>
+                </>
+              ) : (
+                <>
+                  <span>Sign In</span>
+                  <ArrowRight
+                    size={20}
+                    className="group-hover:translate-x-1 transition-transform"
+                  />
+                </>
+              )}
             </button>
           </form>
 
           <div className="mt-10 pt-8 border-t border-[#dee2e6] text-center">
             <p className="text-[#6c757d] text-sm">
               New faculty or student? <br />
-              <Link href='/signup' className="text-[#1a1a1a] font-semibold cursor-pointer hover:text-[#7d1a1a]">
+              <Link
+                href="/signup"
+                className="text-[#1a1a1a] font-semibold cursor-pointer hover:text-[#7d1a1a]"
+              >
                 Request access from the Registrar
               </Link>
             </p>

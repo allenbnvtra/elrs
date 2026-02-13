@@ -3,7 +3,7 @@
 import React from "react";
 import { Users, FileCheck, Award, AlertCircle, ArrowUpRight, PlayCircle } from "lucide-react";
 
-export default function Dashboard() {
+export default function AdminDashboard() {
   return (
     <div className="space-y-6 xs:space-y-8 sm:space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-700">
       {/* WELCOME SECTION */}

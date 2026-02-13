@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   LayoutDashboard,
   BookOpen,
@@ -15,27 +15,47 @@ import {
   LogOut,
   ChevronRight,
   Bell,
-  Search,
-  Zap,
   Menu,
   X,
+  ChevronDown,
+  User,
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { useAuth } from "@/contexts/authContext";
 
 /**
  * Modern Protected Layout - Fully Responsive (Down to 320px)
  * Features: Fixed Maroon Sidebar, Glassmorphism Header, Mobile-First Design
  */
-export default function ProtectedLayout({
+export default function AdminLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
+  const router = useRouter();
+  const { user, logout, isLoading, isAuthenticated } = useAuth();
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
+  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+
+  // Redirect to login if not authenticated
+  useEffect(() => {
+    if (!isLoading && !isAuthenticated) {
+      router.push("/");
+    }
+  }, [isLoading, isAuthenticated, router]);
+
+  // Get user initials
+  const getUserInitials = (name: string) => {
+    const names = name.split(" ");
+    if (names.length >= 2) {
+      return `${names[0][0]}${names[1][0]}`.toUpperCase();
+    }
+    return name.substring(0, 2).toUpperCase();
+  };
 
   // Theme Constants
   const colors = {
@@ -83,6 +103,61 @@ export default function ProtectedLayout({
       ],
     },
   ];
+
+  const handleLogout = async () => {
+    try {
+      await logout();
+    } catch (error) {
+      console.error("Logout error:", error);
+    }
+  };
+
+  // Show loading while checking authentication
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-[#f8f9fa]">
+        <div className="text-center">
+          <div className="w-16 h-16 border-4 border-[#7d1a1a] border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-gray-600 font-semibold">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // If not authenticated, show loading while redirecting (useEffect will handle redirect)
+  if (!isAuthenticated || !user) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-[#f8f9fa]">
+        <div className="text-center">
+          <div className="w-16 h-16 border-4 border-[#7d1a1a] border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-gray-600 font-semibold">Redirecting...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Check if user has admin role
+  if (user.role !== "admin") {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-[#f8f9fa]">
+        <div className="text-center max-w-md p-8">
+          <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <X className="text-red-600" size={40} />
+          </div>
+          <h1 className="text-2xl font-bold text-gray-900 mb-2">Access Denied</h1>
+          <p className="text-gray-600 mb-6">
+            You don't have permission to access the admin panel.
+          </p>
+          <button
+            onClick={handleLogout}
+            className="px-6 py-3 bg-[#7d1a1a] text-white font-semibold rounded-xl hover:bg-[#5a1313] transition-all"
+          >
+            Go to Login
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-screen">
@@ -195,7 +270,10 @@ export default function ProtectedLayout({
             )}
           </button>
 
-          <button className={`w-full flex items-center ${isCollapsed ? "justify-center px-2 xs:px-3" : "gap-2 xs:gap-3 px-3 xs:px-4"} py-2 xs:py-2.5 sm:py-3 text-red-300 hover:bg-red-500/20 rounded-lg sm:rounded-xl transition-all ${!isCollapsed && "mt-1.5 xs:mt-2"} group`}>
+          <button 
+            onClick={handleLogout}
+            className={`w-full flex items-center ${isCollapsed ? "justify-center px-2 xs:px-3" : "gap-2 xs:gap-3 px-3 xs:px-4"} py-2 xs:py-2.5 sm:py-3 text-red-300 hover:bg-red-500/20 rounded-lg sm:rounded-xl transition-all ${!isCollapsed && "mt-1.5 xs:mt-2"} group cursor-pointer`}
+          >
             <LogOut
               size={16}
               className="xs:w-[18px] xs:h-[18px] group-hover:-translate-x-1 transition-transform flex-shrink-0"
@@ -232,7 +310,7 @@ export default function ProtectedLayout({
                 System
               </span>
               <h2 className="text-white font-bold text-[11px] xs:text-xs sm:text-sm tracking-tight capitalize truncate">
-                {pathname.split("/").pop()?.replace("-", " ") || "Dashboard"}
+                {pathname === "/admin" ? "Dashboard" : pathname.split("/").pop()?.replace("-", " ") || "Dashboard"}
               </h2>
             </div>
           </div>
@@ -246,19 +324,93 @@ export default function ProtectedLayout({
 
             <div className="hidden xs:block h-6 sm:h-8 w-px bg-white/10 mx-0.5 sm:mx-1" />
 
-            {/* Profile Section */}
-            <div className="flex items-center gap-1.5 xs:gap-2 sm:gap-3 bg-white/5 border border-white/10 p-0.5 xs:p-1 sm:p-1.5 pr-1.5 xs:pr-2 sm:pr-3 md:pr-4 rounded-lg xs:rounded-xl sm:rounded-2xl hover:bg-white/10 transition-all cursor-pointer group backdrop-blur-sm flex-shrink-0">
-              <div className="w-7 h-7 xs:w-8 xs:h-8 sm:w-9 sm:h-9 md:w-10 md:h-10 bg-white rounded-md xs:rounded-lg sm:rounded-xl flex items-center justify-center text-[#7d1a1a] font-black text-[10px] xs:text-xs sm:text-sm shadow-lg group-hover:scale-95 transition-transform flex-shrink-0">
-                AD
-              </div>
-              <div className="hidden xs:block min-w-0">
-                <p className="text-[9px] xs:text-[10px] sm:text-xs font-black text-white leading-none tracking-wide truncate">
-                  Administrator
-                </p>
-                <p className="text-[7px] xs:text-[8px] sm:text-[10px] text-white/40 font-bold mt-0.5 sm:mt-1 tracking-widest uppercase truncate">
-                  Super User
-                </p>
-              </div>
+            {/* Profile Section with Dropdown */}
+            <div className="relative">
+              <button
+                onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
+                className="flex items-center gap-1.5 xs:gap-2 sm:gap-3 bg-white/5 border border-white/10 p-0.5 xs:p-1 sm:p-1.5 pr-1.5 xs:pr-2 sm:pr-3 md:pr-4 rounded-lg xs:rounded-xl sm:rounded-2xl hover:bg-white/10 transition-all group backdrop-blur-sm flex-shrink-0 cursor-pointer"
+              >
+                <div className="w-7 h-7 xs:w-8 xs:h-8 sm:w-9 sm:h-9 md:w-10 md:h-10 bg-white rounded-md xs:rounded-lg sm:rounded-xl flex items-center justify-center text-[#7d1a1a] font-black text-[10px] xs:text-xs sm:text-sm shadow-lg group-hover:scale-95 transition-transform flex-shrink-0">
+                  {getUserInitials(user.name)}
+                </div>
+                <div className="hidden xs:block min-w-0">
+                  <p className="text-[9px] xs:text-[10px] sm:text-xs font-black text-white leading-none tracking-wide truncate">
+                    {user.name}
+                  </p>
+                  <p className="text-[7px] xs:text-[8px] sm:text-[10px] text-white/40 font-bold mt-0.5 sm:mt-1 tracking-widest uppercase truncate">
+                    {user.role}
+                  </p>
+                </div>
+                <ChevronDown
+                  size={14}
+                  className={`hidden sm:block text-white/60 transition-transform flex-shrink-0 ${
+                    isUserMenuOpen ? "rotate-180" : ""
+                  }`}
+                />
+              </button>
+
+              {/* Dropdown Menu */}
+              {isUserMenuOpen && (
+                <>
+                  {/* Backdrop */}
+                  <div
+                    className="fixed inset-0 z-30"
+                    onClick={() => setIsUserMenuOpen(false)}
+                  />
+                  
+                  {/* Menu */}
+                  <div className="absolute right-0 mt-2 w-56 xs:w-60 bg-white border border-gray-200 rounded-xl xs:rounded-2xl shadow-2xl z-40 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+                    {/* User Info Header */}
+                    <div className="p-4 xs:p-5 border-b border-gray-100 bg-gradient-to-br from-gray-50 to-white">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 xs:w-12 xs:h-12 bg-gradient-to-br from-[#7d1a1a] to-[#5a1313] rounded-xl flex items-center justify-center text-white font-black text-sm xs:text-base shadow-lg flex-shrink-0">
+                          {getUserInitials(user.name)}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm xs:text-base font-black text-gray-900 truncate">
+                            {user.name}
+                          </p>
+                          <p className="text-[10px] xs:text-xs text-gray-500 font-medium truncate">
+                            {user.email}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="mt-3 pt-3 border-t border-gray-100">
+                        <span className="inline-block px-3 py-1 text-[10px] xs:text-xs font-bold text-[#7d1a1a] bg-[#7d1a1a]/10 rounded-full uppercase tracking-wider">
+                          {user.role}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Menu Items */}
+                    <div className="p-2">
+                      <Link
+                        href="/admin/profile"
+                        className="flex items-center gap-3 px-4 py-3 rounded-lg text-gray-700 hover:bg-gray-50 transition-all group"
+                        onClick={() => setIsUserMenuOpen(false)}
+                      >
+                        <User size={18} className="text-gray-400 group-hover:text-[#7d1a1a] transition-colors flex-shrink-0" />
+                        <span className="text-sm font-bold text-gray-900 group-hover:text-[#7d1a1a] transition-colors">
+                          View Profile
+                        </span>
+                      </Link>
+
+                      <button
+                        onClick={() => {
+                          setIsUserMenuOpen(false);
+                          handleLogout();
+                        }}
+                        className="flex items-center gap-3 w-full px-4 py-3 rounded-lg text-red-600 hover:bg-red-50 transition-all group cursor-pointer"
+                      >
+                        <LogOut size={18} className="group-hover:-translate-x-1 transition-transform flex-shrink-0" />
+                        <span className="text-sm font-bold">
+                          Logout
+                        </span>
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </header>
