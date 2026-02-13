@@ -4,12 +4,12 @@ import clientPromise, { dbName } from "@/lib/mongodb";
 import { Question, CourseType, DifficultyType, CorrectAnswer } from "@/models/Questions";
 import { User } from "@/models/User";
 
-type Params = { params: { id: string } };
+type Params = { params: Promise<{ id: string }> };
 
 // ─── PUT /api/questions/[id] ───────────────────────────────────────────────────
 export async function PUT(request: NextRequest, { params }: Params) {
   try {
-    const { id } = params;
+    const { id } = await params; // ← await params here
     if (!ObjectId.isValid(id)) {
       return NextResponse.json({ error: "Invalid question ID" }, { status: 400 });
     }
@@ -81,7 +81,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
 // ─── DELETE /api/questions/[id] ───────────────────────────────────────────────
 export async function DELETE(request: NextRequest, { params }: Params) {
   try {
-    const { id } = params;
+    const { id } = await params; // ← await params here
     if (!ObjectId.isValid(id)) {
       return NextResponse.json({ error: "Invalid question ID" }, { status: 400 });
     }
