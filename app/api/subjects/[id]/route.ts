@@ -4,12 +4,12 @@ import clientPromise, { dbName } from "@/lib/mongodb";
 import { Subject, CourseType } from "@/models/Subject";
 import { User } from "@/models/User";
 
-type Params = { params: { id: string } };
+type Params = { params: Promise<{ id: string }> };
 
 // ─── PUT /api/subjects/[id] ─────────────────────────────────────────────────
 export async function PUT(request: NextRequest, { params }: Params) {
   try {
-    const { id } = params;
+    const { id } = await params; // ← await params here
     if (!ObjectId.isValid(id)) {
       return NextResponse.json({ error: "Invalid subject ID" }, { status: 400 });
     }
@@ -105,7 +105,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
 // ─── DELETE /api/subjects/[id] ──────────────────────────────────────────────
 export async function DELETE(request: NextRequest, { params }: Params) {
   try {
-    const { id } = params;
+    const { id } = await params; // ← await params here
     if (!ObjectId.isValid(id)) {
       return NextResponse.json({ error: "Invalid subject ID" }, { status: 400 });
     }
