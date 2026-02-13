@@ -88,7 +88,7 @@ export default function AdminLayout({
         {
           label: "Coordinator Status",
           icon: UserPlus,
-          href: "/admin/coordinator-status",
+          href: "/admin/coordinators",
         },
         { label: "Student Info", icon: Users, href: "/admin/student-info" },
       ],

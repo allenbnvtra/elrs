@@ -45,10 +45,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Validate course
-    if ((userType === "student" || userType === "faculty") && course !== "BSGE" && course !== "BSABEN") {
+    // Validate course - Updated to match new model
+    if ((userType === "student" || userType === "faculty") && course !== "BSGE" && course !== "BSABE") {
       return NextResponse.json(
-        { error: "Invalid course. Must be BSGE or BSABEN" },
+        { error: "Invalid course. Must be BSGE or BSABE" },
         { status: 400 }
       );
     }
@@ -124,6 +124,7 @@ export async function POST(request: NextRequest) {
         role: "student",
         studentNumber: studentNumber,
         course: course as CourseType,
+        status: "pending", // New: Students need approval
         enrolledCourseIds: [],
         createdAt: now,
         updatedAt: now,
@@ -136,12 +137,14 @@ export async function POST(request: NextRequest) {
         role: "faculty",
         course: course as CourseType,
         department: course === "BSGE" ? "Geodetic Engineering" : "Agricultural and Biosystems Engineering",
+        status: "pending", // New: Faculty/Coordinators need approval
+        contributions: 0, // New: Track question contributions
         courseIdsTeaching: [],
         createdAt: now,
         updatedAt: now,
       } as Omit<Faculty, "_id">;
     } else {
-      // Admin
+      // Admin - No approval needed
       newUser = {
         name: fullName,
         email: email.toLowerCase(),
@@ -165,10 +168,19 @@ export async function POST(request: NextRequest) {
     );
     console.log("✅ User fetched successfully");
 
+    // Different success messages based on user type
+    let message = "Account created successfully";
+    if (userType === "student") {
+      message = "Account created successfully. Your account is pending approval.";
+    } else if (userType === "faculty") {
+      message = "Coordinator account created successfully. Your account is pending admin approval.";
+    }
+
     return NextResponse.json(
       {
-        message: "Account created successfully",
+        message,
         user: createdUser,
+        requiresApproval: userType !== "admin",
       },
       { status: 201 }
     );

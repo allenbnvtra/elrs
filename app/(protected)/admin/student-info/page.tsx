@@ -1,122 +1,237 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { 
-  Search, Filter, MoreVertical, Download, 
-  Mail, Phone, Calendar, User, Hash,
-  ChevronLeft, ChevronRight, CheckCircle, 
-  Clock, FileBarChart, GraduationCap,
-  MoreHorizontal, X
+  Search, Download, 
+  ChevronLeft, ChevronRight, 
+  FileBarChart, GraduationCap,
+  MoreHorizontal, X, Loader2, AlertCircle
 } from "lucide-react";
-import Image from "next/image";
+import { useAuth } from "@/contexts/authContext";
+
+interface Student {
+  _id: string;
+  name: string;
+  email: string;
+  studentNumber: string;
+  course: "BSABE" | "BSGE";
+  status: "pending" | "approved" | "rejected";
+  createdAt: string;
+}
+
+interface Stats {
+  totalStudents: number;
+  bsabeCount: number;
+  bsgeCount: number;
+}
+
+interface Pagination {
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+}
 
 export default function StudentInfoPage() {
-  const [selectedCourse, setSelectedCourse] = useState("BSABE");
-  const [activeFilter, setActiveFilter] = useState("all");
+  const { user } = useAuth();
+  const [selectedCourse, setSelectedCourse] = useState<"BSABE" | "BSGE" | "all">("all");
   const [searchQuery, setSearchQuery] = useState("");
+  const [students, setStudents] = useState<Student[]>([]);
+  const [stats, setStats] = useState<Stats>({
+    totalStudents: 0,
+    bsabeCount: 0,
+    bsgeCount: 0,
+  });
+  const [pagination, setPagination] = useState<Pagination>({
+    total: 0,
+    page: 1,
+    limit: 50,
+    totalPages: 1,
+  });
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
 
-  const students = [
-    { 
-      id: "2023-10041", 
-      name: "Juan Paolo Cruz", 
-      email: "p.cruz@student.edu.ph", 
-      course: "BSABE", 
-      year: "4th Year",
-      averageScore: "88%",
-      status: "active",
-      examsTaken: 14
-    },
-    { 
-      id: "2022-20052", 
-      name: "Maria Leonora Santos", 
-      email: "m.santos@student.edu.ph", 
-      course: "BSGE", 
-      year: "3rd Year",
-      averageScore: "92%",
-      status: "active",
-      examsTaken: 22
-    },
-    { 
-      id: "2023-10088", 
-      name: "Roberto Gomez", 
-      email: "r.gomez@student.edu.ph", 
-      course: "BSABE", 
-      year: "4th Year",
-      averageScore: "76%",
-      status: "inactive",
-      examsTaken: 5
-    },
-    { 
-      id: "2023-10095", 
-      name: "Ana Maria Reyes", 
-      email: "a.reyes@student.edu.ph", 
-      course: "BSABE", 
-      year: "3rd Year",
-      averageScore: "91%",
-      status: "active",
-      examsTaken: 18
+  // Fetch students
+  const fetchStudents = async () => {
+    if (!user?.id) return;
+    
+    setLoading(true);
+    setError("");
+    
+    try {
+      const params = new URLSearchParams({
+        userId: user.id,
+        status: "approved",
+        page: String(currentPage),
+        limit: "50",
+      });
+
+      if (selectedCourse !== "all") {
+        params.set("course", selectedCourse);
+      }
+
+      if (searchQuery) {
+        params.set("search", searchQuery);
+      }
+
+      const res = await fetch(`/api/students?${params}`);
+      const data = await res.json();
+
+      if (!res.ok) {
+        setError(data.error || "Failed to fetch students");
+        return;
+      }
+
+      setStudents(data.students);
+      setPagination(data.pagination);
+      setStats(data.stats);
+    } catch (err) {
+      setError("Failed to load students");
+      console.error(err);
+    } finally {
+      setLoading(false);
     }
-  ];
+  };
 
-  const filteredStudents = students.filter(s => s.course === selectedCourse);
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [selectedCourse, searchQuery]);
+
+  // Fetch when dependencies change
+  useEffect(() => {
+    fetchStudents();
+  }, [user?.id, selectedCourse, searchQuery, currentPage]);
+
+  // Export to CSV
+  const handleExportCSV = () => {
+    const headers = ["Student Number", "Name", "Email", "Course", "Status"];
+    const rows = students.map(s => [
+      s.studentNumber,
+      s.name,
+      s.email,
+      s.course,
+      s.status,
+    ]);
+
+    const csvContent = [
+      headers.join(","),
+      ...rows.map(row => row.join(","))
+    ].join("\n");
+
+    const blob = new Blob([csvContent], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `students_${selectedCourse}_${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // Pagination
+  const buildPageList = () => {
+    const totalPages = pagination.totalPages;
+    if (totalPages <= 5) return Array.from({ length: totalPages }, (_, i) => i + 1);
+    if (currentPage <= 3) return [1, 2, 3, "...", totalPages];
+    if (currentPage >= totalPages - 2) return [1, "...", totalPages - 2, totalPages - 1, totalPages];
+    return [1, "...", currentPage - 1, currentPage, currentPage + 1, "...", totalPages];
+  };
 
   return (
     <div className="space-y-4 xs:space-y-5 sm:space-y-6 animate-in fade-in duration-700">
       
-      {/* HEADER SECTION */}
-      <div className="flex flex-col gap-3 xs:gap-4">
-        <div>
-          <h1 className="text-xl xs:text-2xl sm:text-3xl font-black text-gray-900 tracking-tight">
-            Student Registry
-          </h1>
-          <p className="text-[9px] xs:text-[10px] sm:text-xs text-gray-500 font-bold uppercase tracking-[0.12em] xs:tracking-[0.15em] sm:tracking-widest mt-0.5 xs:mt-1">
-            Master Student Database
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <button className="flex items-center justify-center gap-1.5 xs:gap-2 px-3 xs:px-4 py-2 xs:py-2.5 bg-white border border-gray-200 rounded-lg xs:rounded-xl font-bold text-gray-600 hover:bg-gray-50 transition-all text-[10px] xs:text-xs active:scale-95">
-            <Download size={14} className="xs:w-4 xs:h-4" />
-            <span>Export CSV</span>
+      <div className="space-y-4 xs:space-y-6 sm:space-y-8">
+        {/* PAGE HEADER */}
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 xs:gap-4">
+          <div>
+            <div className="flex items-center gap-1.5 xs:gap-2 mb-0.5 xs:mb-1">
+              <GraduationCap className="text-[#7d1a1a]" size={16} />
+              <span className="text-[#7d1a1a] font-bold text-[9px] xs:text-[10px] sm:text-xs uppercase tracking-[0.12em] xs:tracking-[0.15em] sm:tracking-widest">
+                Master Student Database
+              </span>
+            </div>
+            <h1 className="text-xl xs:text-2xl sm:text-3xl font-black text-gray-900 tracking-tight">
+              Student Registry
+            </h1>
+          </div>
+
+          <button 
+            onClick={handleExportCSV}
+            disabled={students.length === 0}
+            className="flex items-center justify-center gap-1.5 xs:gap-2 bg-white border border-gray-200 px-4 xs:px-5 sm:px-6 py-2.5 xs:py-2.5 sm:py-3 rounded-lg xs:rounded-xl font-bold text-gray-600 hover:bg-gray-50 transition-all text-xs xs:text-sm active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <Download size={16} className="xs:w-[18px] xs:h-[18px] sm:w-5 sm:h-5" />
+            <span className="truncate">Export CSV</span>
           </button>
         </div>
+
+        {/* Error Alert */}
+        {error && (
+          <div className="flex items-center gap-2.5 bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3">
+            <AlertCircle size={16} className="shrink-0" />
+            <p className="text-sm font-semibold">{error}</p>
+            <button onClick={() => setError("")} className="ml-auto">
+              <X size={16} />
+            </button>
+          </div>
+        )}
       </div>
 
       {/* TOP ANALYTICS MINI-STRIP */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2 xs:gap-3 sm:gap-4">
-        {[
-          { label: "Total Students", value: "1,240", color: "text-blue-600" },
-          { label: "BSABE Track", value: "780", color: "text-[#7d1a1a]" },
-          { label: "BSGE Track", value: "460", color: "text-emerald-600" },
-          { label: "Avg. Passing", value: "84%", color: "text-amber-600" },
-        ].map((stat, i) => (
-          <div 
-            key={i} 
-            className="bg-white p-3 xs:p-4 rounded-xl xs:rounded-2xl border border-gray-200/60 shadow-sm"
-          >
-            <p className="text-[8px] xs:text-[9px] sm:text-[10px] font-black text-gray-400 uppercase tracking-tighter truncate">
-              {stat.label}
-            </p>
-            <p className={`text-base xs:text-lg sm:text-xl font-black ${stat.color} truncate`}>
-              {stat.value}
-            </p>
-          </div>
-        ))}
+        <div className="bg-white p-3 xs:p-4 rounded-xl xs:rounded-2xl border border-gray-200/60 shadow-sm">
+          <p className="text-[8px] xs:text-[9px] sm:text-[10px] font-black text-gray-400 uppercase tracking-tighter truncate">
+            Total Students
+          </p>
+          <p className="text-base xs:text-lg sm:text-xl font-black text-blue-600 truncate">
+            {stats.totalStudents.toLocaleString()}
+          </p>
+        </div>
+        <div className="bg-white p-3 xs:p-4 rounded-xl xs:rounded-2xl border border-gray-200/60 shadow-sm">
+          <p className="text-[8px] xs:text-[9px] sm:text-[10px] font-black text-gray-400 uppercase tracking-tighter truncate">
+            BSABE Track
+          </p>
+          <p className="text-base xs:text-lg sm:text-xl font-black text-[#7d1a1a] truncate">
+            {stats.bsabeCount.toLocaleString()}
+          </p>
+        </div>
+        <div className="bg-white p-3 xs:p-4 rounded-xl xs:rounded-2xl border border-gray-200/60 shadow-sm">
+          <p className="text-[8px] xs:text-[9px] sm:text-[10px] font-black text-gray-400 uppercase tracking-tighter truncate">
+            BSGE Track
+          </p>
+          <p className="text-base xs:text-lg sm:text-xl font-black text-emerald-600 truncate">
+            {stats.bsgeCount.toLocaleString()}
+          </p>
+        </div>
+        <div className="bg-white p-3 xs:p-4 rounded-xl xs:rounded-2xl border border-gray-200/60 shadow-sm">
+          <p className="text-[8px] xs:text-[9px] sm:text-[10px] font-black text-gray-400 uppercase tracking-tighter truncate">
+            Showing
+          </p>
+          <p className="text-base xs:text-lg sm:text-xl font-black text-amber-600 truncate">
+            {students.length}
+          </p>
+        </div>
       </div>
 
       {/* SEARCH & COURSE NAVIGATION */}
       <div className="flex flex-col gap-3 xs:gap-4 bg-white p-3 xs:p-4 rounded-xl xs:rounded-2xl border border-gray-200/60 shadow-sm">
         <div className="flex bg-gray-100 p-0.5 xs:p-1 rounded-lg xs:rounded-xl w-full">
-          {["BSABE", "BSGE"].map((course) => (
+          {[
+            { value: "all", label: "All Courses" },
+            { value: "BSABE", label: "BSABE" },
+            { value: "BSGE", label: "BSGE" },
+          ].map((option) => (
             <button
-              key={course}
-              onClick={() => setSelectedCourse(course)}
+              key={option.value}
+              onClick={() => setSelectedCourse(option.value as any)}
               className={`flex-1 px-6 xs:px-8 sm:px-10 py-2 xs:py-2.5 rounded-md xs:rounded-lg text-[9px] xs:text-[10px] sm:text-[11px] font-black uppercase tracking-wider transition-all ${
-                selectedCourse === course 
+                selectedCourse === option.value 
                 ? "bg-white text-[#7d1a1a] shadow-sm" 
                 : "text-gray-500 hover:text-gray-700"
               }`}
             >
-              {course}
+              {option.label}
             </button>
           ))}
         </div>
@@ -128,7 +243,7 @@ export default function StudentInfoPage() {
             placeholder="Search name, ID, or email..." 
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-7 xs:pl-10 pr-8 xs:pr-10 py-2 xs:py-2.5 bg-gray-50 border border-gray-200 rounded-lg xs:rounded-xl text-xs xs:text-sm focus:outline-none focus:ring-2 focus:ring-[#7d1a1a]/10 transition-all placeholder:text-[10px] xs:placeholder:text-xs"
+            className="w-full pl-7 text-slate-800 xs:pl-10 pr-8 xs:pr-10 py-2 xs:py-2.5 bg-gray-50 border border-gray-200 rounded-lg xs:rounded-xl text-xs xs:text-sm focus:outline-none focus:ring-2 focus:ring-[#7d1a1a]/10 transition-all placeholder:text-[10px] xs:placeholder:text-xs"
           />
           {searchQuery && (
             <button 
@@ -142,22 +257,28 @@ export default function StudentInfoPage() {
         </div>
       </div>
 
-      {/* DESKTOP TABLE VIEW (hidden on mobile) */}
+      {/* DESKTOP TABLE VIEW */}
       <div className="hidden lg:block bg-white rounded-[24px] border border-gray-200 shadow-sm overflow-hidden flex-col min-h-[550px]">
         <div className="flex-1 overflow-auto custom-scrollbar">
           <table className="w-full text-left border-collapse relative">
             <thead className="sticky top-0 z-10 bg-gray-50/90 backdrop-blur-md border-b border-gray-200">
               <tr className="text-[10px] font-black text-gray-400 uppercase tracking-widest">
                 <th className="px-8 py-5">Student Identity</th>
-                <th className="px-6 py-5">Year Level</th>
-                <th className="px-6 py-5">Performance</th>
+                <th className="px-6 py-5">Course</th>
+                <th className="px-6 py-5">Email</th>
                 <th className="px-6 py-5">Status</th>
                 <th className="px-8 py-5 text-right">Details</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {filteredStudents.map((student, i) => (
-                <tr key={i} className="hover:bg-gray-50/50 transition-colors group">
+              {loading ? (
+                <tr>
+                  <td colSpan={5} className="py-24 text-center">
+                    <Loader2 size={32} className="animate-spin text-[#7d1a1a] mx-auto" />
+                  </td>
+                </tr>
+              ) : students.length > 0 ? students.map((student) => (
+                <tr key={student._id} className="hover:bg-gray-50/50 transition-colors group">
                   <td className="px-8 py-5">
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#7d1a1a] to-[#3d0d0d] flex items-center justify-center text-white font-black text-xs">
@@ -165,30 +286,22 @@ export default function StudentInfoPage() {
                       </div>
                       <div>
                         <p className="text-sm font-black text-gray-900 leading-none">{student.name}</p>
-                        <p className="text-[11px] text-gray-400 font-bold mt-1 tracking-tight">{student.id}</p>
+                        <p className="text-[11px] text-gray-400 font-bold mt-1 tracking-tight">{student.studentNumber}</p>
                       </div>
                     </div>
                   </td>
                   <td className="px-6 py-5">
                     <div className="flex items-center gap-2">
                       <GraduationCap size={14} className="text-gray-400" />
-                      <span className="text-xs font-bold text-gray-700">{student.year}</span>
+                      <span className="text-xs font-bold text-gray-700">{student.course}</span>
                     </div>
                   </td>
                   <td className="px-6 py-5">
-                    <div className="flex flex-col">
-                      <div className="flex items-center gap-2 text-xs font-black text-gray-800">
-                        <FileBarChart size={14} className="text-emerald-600" />
-                        {student.averageScore} Avg.
-                      </div>
-                      <span className="text-[10px] text-gray-400 font-bold uppercase">{student.examsTaken} Exams Completed</span>
-                    </div>
+                    <span className="text-xs text-gray-600">{student.email}</span>
                   </td>
                   <td className="px-6 py-5">
-                    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black uppercase ${
-                      student.status === 'active' ? 'bg-emerald-50 text-emerald-600' : 'bg-gray-100 text-gray-400'
-                    }`}>
-                      <div className={`w-1 h-1 rounded-full ${student.status === 'active' ? 'bg-emerald-600' : 'bg-gray-400'}`} />
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black uppercase bg-emerald-50 text-emerald-600">
+                      <div className="w-1 h-1 rounded-full bg-emerald-600" />
                       {student.status}
                     </span>
                   </td>
@@ -201,43 +314,70 @@ export default function StudentInfoPage() {
                     </button>
                   </td>
                 </tr>
-              ))}
+              )) : (
+                <tr>
+                  <td colSpan={5} className="py-24 text-center">
+                    <p className="text-gray-400 font-bold">No students found</p>
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
 
         {/* PAGINATION FOOTER */}
-        <div className="p-5 border-t border-gray-100 bg-gray-50/30 flex items-center justify-between">
-          <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">
-            Showing records for Academic Year 2025-2026
-          </p>
-          <div className="flex items-center gap-2">
-            <button 
-              className="p-2 text-gray-400 hover:bg-white border border-gray-200 rounded-lg disabled:opacity-30" 
-              disabled
-              aria-label="Previous page"
-            >
-              <ChevronLeft size={18} />
-            </button>
-            <button className="w-9 h-9 rounded-lg text-xs font-bold bg-[#7d1a1a] text-white">
-              1
-            </button>
-            <button 
-              className="p-2 text-gray-400 hover:bg-white border border-gray-200 rounded-lg disabled:opacity-30" 
-              disabled
-              aria-label="Next page"
-            >
-              <ChevronRight size={18} />
-            </button>
+        {pagination.totalPages > 1 && (
+          <div className="p-5 border-t border-gray-100 bg-gray-50/30 flex items-center justify-between">
+            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">
+              Showing {((pagination.page - 1) * pagination.limit) + 1}-{Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total}
+            </p>
+            <div className="flex items-center gap-2">
+              <button 
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+                className="p-2 text-gray-400 hover:bg-white border border-gray-200 rounded-lg disabled:opacity-30 transition-all" 
+                aria-label="Previous page"
+              >
+                <ChevronLeft size={18} />
+              </button>
+              {buildPageList().map((p, i) => (
+                <button
+                  key={i}
+                  onClick={() => typeof p === "number" && setCurrentPage(p)}
+                  disabled={typeof p !== "number"}
+                  className={`min-w-[36px] h-9 px-2 rounded-lg text-xs font-bold border transition-all ${
+                    p === currentPage 
+                      ? "bg-[#7d1a1a] text-white border-[#7d1a1a]" 
+                      : typeof p === "number"
+                      ? "bg-white border-gray-200 text-gray-500 hover:border-[#7d1a1a] hover:text-[#7d1a1a]"
+                      : "bg-transparent border-transparent text-gray-400 cursor-default"
+                  }`}
+                >
+                  {p}
+                </button>
+              ))}
+              <button 
+                onClick={() => setCurrentPage(p => Math.min(pagination.totalPages, p + 1))}
+                disabled={currentPage === pagination.totalPages}
+                className="p-2 text-gray-400 hover:bg-white border border-gray-200 rounded-lg disabled:opacity-30 transition-all" 
+                aria-label="Next page"
+              >
+                <ChevronRight size={18} />
+              </button>
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
-      {/* MOBILE CARD VIEW (visible only on mobile) */}
+      {/* MOBILE CARD VIEW */}
       <div className="lg:hidden space-y-3 xs:space-y-4">
-        {filteredStudents.map((student, i) => (
+        {loading ? (
+          <div className="flex justify-center py-12">
+            <Loader2 size={32} className="animate-spin text-[#7d1a1a]" />
+          </div>
+        ) : students.length > 0 ? students.map((student) => (
           <div 
-            key={i} 
+            key={student._id} 
             className="bg-white rounded-xl xs:rounded-2xl border border-gray-200 shadow-sm p-3 xs:p-4 hover:shadow-md transition-all"
           >
             {/* Card Header */}
@@ -250,18 +390,14 @@ export default function StudentInfoPage() {
                   {student.name}
                 </h3>
                 <p className="text-[10px] xs:text-[11px] text-gray-400 font-bold mb-1.5 xs:mb-2">
-                  {student.id}
+                  {student.studentNumber}
                 </p>
                 <div className="flex items-center gap-1.5 xs:gap-2 flex-wrap">
                   <span className="text-[9px] xs:text-[10px] font-bold text-gray-600 bg-gray-100 px-1.5 xs:px-2 py-0.5 xs:py-1 rounded uppercase">
                     {student.course}
                   </span>
-                  <span className={`inline-flex items-center gap-1 px-1.5 xs:px-2 py-0.5 xs:py-1 rounded-full text-[8px] xs:text-[9px] font-black uppercase ${
-                    student.status === 'active' ? 'bg-emerald-50 text-emerald-600' : 'bg-gray-100 text-gray-400'
-                  }`}>
-                    <div className={`w-1 h-1 xs:w-1.5 xs:h-1.5 rounded-full ${
-                      student.status === 'active' ? 'bg-emerald-600' : 'bg-gray-400'
-                    }`} />
+                  <span className="inline-flex items-center gap-1 px-1.5 xs:px-2 py-0.5 xs:py-1 rounded-full text-[8px] xs:text-[9px] font-black uppercase bg-emerald-50 text-emerald-600">
+                    <div className="w-1 h-1 xs:w-1.5 xs:h-1.5 rounded-full bg-emerald-600" />
                     {student.status}
                   </span>
                 </div>
@@ -276,36 +412,6 @@ export default function StudentInfoPage() {
                 </span>
                 <span className="text-[10px] xs:text-xs font-bold text-gray-700 truncate ml-2 max-w-[60%] text-right">
                   {student.email}
-                </span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] xs:text-xs text-gray-500 font-medium">
-                  Year Level:
-                </span>
-                <div className="flex items-center gap-1 xs:gap-1.5">
-                  <GraduationCap size={12} className="text-gray-400 xs:w-3.5 xs:h-3.5" />
-                  <span className="text-[10px] xs:text-xs font-bold text-gray-700">
-                    {student.year}
-                  </span>
-                </div>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] xs:text-xs text-gray-500 font-medium">
-                  Average Score:
-                </span>
-                <div className="flex items-center gap-1 xs:gap-1.5">
-                  <FileBarChart size={12} className="text-emerald-600 xs:w-3.5 xs:h-3.5" />
-                  <span className="text-[10px] xs:text-xs font-black text-gray-800">
-                    {student.averageScore}
-                  </span>
-                </div>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] xs:text-xs text-gray-500 font-medium">
-                  Exams Taken:
-                </span>
-                <span className="text-[10px] xs:text-xs font-bold text-gray-700">
-                  {student.examsTaken} Completed
                 </span>
               </div>
             </div>
@@ -323,33 +429,61 @@ export default function StudentInfoPage() {
               </button>
             </div>
           </div>
-        ))}
+        )) : (
+          <div className="bg-white rounded-xl xs:rounded-2xl border-2 border-dashed border-gray-100 p-8 xs:p-12 flex flex-col items-center justify-center text-center">
+            <p className="font-black uppercase tracking-widest text-xs xs:text-sm text-gray-500 mb-1">
+              No Students Found
+            </p>
+            <p className="text-[10px] xs:text-xs font-bold text-gray-400">
+              Try adjusting your filters
+            </p>
+          </div>
+        )}
 
         {/* Mobile Pagination */}
-        <div className="bg-white rounded-xl xs:rounded-2xl border border-gray-200 shadow-sm p-3 xs:p-4">
-          <p className="text-[9px] xs:text-[10px] font-black text-gray-400 uppercase tracking-[0.12em] xs:tracking-widest text-center mb-3 xs:mb-4">
-            Academic Year 2025-2026
-          </p>
-          <div className="flex items-center justify-center gap-1.5 xs:gap-2">
-            <button 
-              className="p-1.5 xs:p-2 text-gray-400 hover:bg-white border border-gray-200 rounded-lg disabled:opacity-30" 
-              disabled
-              aria-label="Previous page"
-            >
-              <ChevronLeft size={16} className="xs:w-[18px] xs:h-[18px]" />
-            </button>
-            <button className="w-8 h-8 xs:w-9 xs:h-9 rounded-lg text-[10px] xs:text-xs font-bold bg-[#7d1a1a] text-white">
-              1
-            </button>
-            <button 
-              className="p-1.5 xs:p-2 text-gray-400 hover:bg-white border border-gray-200 rounded-lg disabled:opacity-30" 
-              disabled
-              aria-label="Next page"
-            >
-              <ChevronRight size={16} className="xs:w-[18px] xs:h-[18px]" />
-            </button>
+        {pagination.totalPages > 1 && (
+          <div className="bg-white rounded-xl xs:rounded-2xl border border-gray-200 shadow-sm p-3 xs:p-4">
+            <p className="text-[9px] xs:text-[10px] font-black text-gray-400 uppercase tracking-[0.12em] xs:tracking-widest text-center mb-3 xs:mb-4">
+              Page {currentPage} of {pagination.totalPages}
+            </p>
+            <div className="flex items-center justify-center gap-1.5 xs:gap-2">
+              <button 
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+                className="p-1.5 xs:p-2 text-gray-400 hover:bg-white border border-gray-200 rounded-lg disabled:opacity-30" 
+                aria-label="Previous page"
+              >
+                <ChevronLeft size={16} className="xs:w-[18px] xs:h-[18px]" />
+              </button>
+              <div className="flex items-center gap-0.5 xs:gap-1 overflow-x-auto">
+                {buildPageList().map((p, i) => (
+                  <button
+                    key={i}
+                    onClick={() => typeof p === "number" && setCurrentPage(p)}
+                    disabled={typeof p !== "number"}
+                    className={`min-w-[32px] xs:min-w-[36px] h-8 xs:h-9 px-1.5 xs:px-2 rounded-lg text-[10px] xs:text-xs font-black border transition-all flex-shrink-0 ${
+                      p === currentPage 
+                        ? "bg-[#7d1a1a] text-white border-[#7d1a1a]" 
+                        : typeof p === "number"
+                        ? "bg-white border-gray-200 text-gray-500 active:scale-95"
+                        : "bg-transparent border-transparent text-gray-400 cursor-default"
+                    }`}
+                  >
+                    {p}
+                  </button>
+                ))}
+              </div>
+              <button 
+                onClick={() => setCurrentPage(p => Math.min(pagination.totalPages, p + 1))}
+                disabled={currentPage === pagination.totalPages}
+                className="p-1.5 xs:p-2 text-gray-400 hover:bg-white border border-gray-200 rounded-lg disabled:opacity-30" 
+                aria-label="Next page"
+              >
+                <ChevronRight size={16} className="xs:w-[18px] xs:h-[18px]" />
+              </button>
+            </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );

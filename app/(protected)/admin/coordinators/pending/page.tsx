@@ -2,38 +2,35 @@
 
 import React, { useState, useEffect } from "react";
 import { 
-  Check, X, Search, Filter, UserCheck, UserX, 
-  MoreHorizontal, Mail, Calendar, Info, ChevronLeft, ChevronRight,
-  ShieldCheck, ShieldAlert, GraduationCap, Loader2, AlertCircle
+  Check, X, Search, ShieldCheck, ShieldAlert, 
+  Calendar, Info, ChevronLeft, ChevronRight,
+  Loader2, AlertCircle, UserCheck, Mail
 } from "lucide-react";
 import Image from "next/image";
 import { useAuth } from "@/contexts/authContext";
 
-interface Student {
+interface Coordinator {
   _id: string;
   name: string;
   email: string;
   course: "BSABE" | "BSGE";
-  studentNumber: string;
+  department: string;
   status: "pending" | "approved" | "rejected";
   createdAt: string;
-  approvedBy?: string;
-  approvedByName?: string;
-  approvedAt?: string;
 }
 
-export default function StudentApprovalPage() {
+export default function PendingCoordinatorsPage() {
   const { user } = useAuth();
-  const [selectedCourse, setSelectedCourse] = useState<"BSABE" | "BSGE">("BSABE");
+  const [selectedCourse, setSelectedCourse] = useState<"BSABE" | "BSGE" | "all">("all");
   const [searchQuery, setSearchQuery] = useState("");
-  const [students, setStudents] = useState<Student[]>([]);
+  const [coordinators, setCoordinators] = useState<Coordinator[]>([]);
   const [loading, setLoading] = useState(false);
   const [approving, setApproving] = useState<string | null>(null);
   const [approvingAll, setApprovingAll] = useState(false);
   const [error, setError] = useState("");
 
-  // Fetch pending students
-  const fetchStudents = async () => {
+  // Fetch pending coordinators
+  const fetchCoordinators = async () => {
     if (!user?.id) return;
     
     setLoading(true);
@@ -45,22 +42,21 @@ export default function StudentApprovalPage() {
         status: "pending",
       });
 
-      // Only add course filter if user is admin
-      if (user.role === "admin") {
+      if (selectedCourse !== "all") {
         params.set("course", selectedCourse);
       }
 
-      const res = await fetch(`/api/students/approve?${params}`);
+      const res = await fetch(`/api/coordinators/approve?${params}`);
       const data = await res.json();
 
       if (!res.ok) {
-        setError(data.error || "Failed to fetch students");
+        setError(data.error || "Failed to fetch coordinators");
         return;
       }
 
-      setStudents(data.students);
+      setCoordinators(data.coordinators);
     } catch (err) {
-      setError("Failed to load students");
+      setError("Failed to load coordinators");
       console.error(err);
     } finally {
       setLoading(false);
@@ -68,22 +64,22 @@ export default function StudentApprovalPage() {
   };
 
   useEffect(() => {
-    fetchStudents();
+    fetchCoordinators();
   }, [user?.id, selectedCourse]);
 
-  // Approve/Reject single student
-  const handleAction = async (studentId: string, action: "approve" | "reject") => {
+  // Approve/Reject single coordinator
+  const handleAction = async (coordinatorId: string, action: "approve" | "reject") => {
     if (!user?.id) return;
 
-    setApproving(studentId);
+    setApproving(coordinatorId);
     setError("");
 
     try {
-      const res = await fetch("/api/students/approve", {
+      const res = await fetch("/api/coordinators/approve", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          studentId,
+          coordinatorId,
           userId: user.id,
           action,
         }),
@@ -92,27 +88,26 @@ export default function StudentApprovalPage() {
       const data = await res.json();
 
       if (!res.ok) {
-        setError(data.error || `Failed to ${action} student`);
+        setError(data.error || `Failed to ${action} coordinator`);
         return;
       }
 
-      // Refresh the list
-      await fetchStudents();
+      await fetchCoordinators();
     } catch (err) {
-      setError(`Failed to ${action} student`);
+      setError(`Failed to ${action} coordinator`);
       console.error(err);
     } finally {
       setApproving(null);
     }
   };
 
-  // Approve all pending students
+  // Approve all pending coordinators
   const handleApproveAll = async () => {
     if (!user?.id) return;
     
-    const confirmMsg = user.role === "admin" 
-      ? `Approve all pending ${selectedCourse} students?`
-      : `Approve all pending students from your course?`;
+    const confirmMsg = selectedCourse === "all"
+      ? "Approve all pending coordinators from all courses?"
+      : `Approve all pending ${selectedCourse} coordinators?`;
 
     if (!confirm(confirmMsg)) return;
 
@@ -125,12 +120,11 @@ export default function StudentApprovalPage() {
         action: "approve",
       };
 
-      // Only include course if user is admin
-      if (user.role === "admin") {
+      if (selectedCourse !== "all") {
         payload.course = selectedCourse;
       }
 
-      const res = await fetch("/api/students/approve-all", {
+      const res = await fetch("/api/coordinators/approve-all", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -139,27 +133,27 @@ export default function StudentApprovalPage() {
       const data = await res.json();
 
       if (!res.ok) {
-        setError(data.error || "Failed to approve students");
+        setError(data.error || "Failed to approve coordinators");
         return;
       }
 
       alert(data.message);
-      await fetchStudents();
+      await fetchCoordinators();
     } catch (err) {
-      setError("Failed to approve students");
+      setError("Failed to approve coordinators");
       console.error(err);
     } finally {
       setApprovingAll(false);
     }
   };
 
-  // Filter students by search query
-  const filteredStudents = students.filter(s => {
+  // Filter coordinators by search query
+  const filteredCoordinators = coordinators.filter(c => {
     const query = searchQuery.toLowerCase();
     return (
-      s.name.toLowerCase().includes(query) ||
-      s.email.toLowerCase().includes(query) ||
-      s.studentNumber.toLowerCase().includes(query)
+      c.name.toLowerCase().includes(query) ||
+      c.email.toLowerCase().includes(query) ||
+      c.department.toLowerCase().includes(query)
     );
   });
 
@@ -170,12 +164,12 @@ export default function StudentApprovalPage() {
       <div className="flex flex-col gap-3 xs:gap-4">
         <div>
           <h1 className="text-xl xs:text-2xl sm:text-3xl font-black text-gray-900 tracking-tight">
-            Student Approval
+            Coordinator Approval
           </h1>
           <div className="flex items-center gap-1.5 xs:gap-2 mt-0.5 xs:mt-1">
             <span className="flex h-1.5 w-1.5 xs:h-2 xs:w-2 rounded-full bg-amber-500 animate-pulse"></span>
             <p className="text-[9px] xs:text-[10px] sm:text-xs text-gray-500 font-bold uppercase tracking-[0.12em] xs:tracking-[0.15em] sm:tracking-widest">
-              {filteredStudents.length} Pending Verifications
+              {filteredCoordinators.length} Pending Verifications
             </p>
           </div>
         </div>
@@ -194,7 +188,7 @@ export default function StudentApprovalPage() {
         <div className="flex gap-2">
           <button 
             onClick={handleApproveAll}
-            disabled={approvingAll || filteredStudents.length === 0}
+            disabled={approvingAll || filteredCoordinators.length === 0}
             className="flex items-center justify-center gap-1.5 xs:gap-2 px-3 xs:px-4 py-2 xs:py-2.5 bg-emerald-50 text-emerald-700 border border-emerald-100 rounded-lg xs:rounded-xl font-bold hover:bg-emerald-100 transition-all text-[10px] xs:text-xs active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {approvingAll ? (
@@ -204,39 +198,46 @@ export default function StudentApprovalPage() {
             )}
             <span>{approvingAll ? "Approving..." : "Approve All"}</span>
           </button>
+          <button 
+            onClick={() => window.location.href = '/admin/coordinators'}
+            className="flex items-center justify-center text-slate-800 gap-1.5 xs:gap-2 px-3 xs:px-4 py-2 xs:py-2.5 bg-white border border-gray-200 rounded-lg xs:rounded-xl font-bold hover:bg-gray-50 transition-all text-[10px] xs:text-xs active:scale-95"
+          >
+            View Active Coordinators
+          </button>
         </div>
       </div>
 
       {/* NAVIGATION & SEARCH */}
       <div className="flex flex-col gap-3 xs:gap-4 bg-white p-3 xs:p-4 rounded-xl xs:rounded-2xl border border-gray-200/60 shadow-sm">
-        {/* Course tabs - only show for admin */}
-        {user?.role === "admin" && (
-          <div className="flex bg-gray-100 p-0.5 xs:p-1 rounded-lg xs:rounded-xl w-full">
-            {["BSABE", "BSGE"].map((course) => (
-              <button
-                key={course}
-                onClick={() => setSelectedCourse(course as "BSABE" | "BSGE")}
-                className={`flex-1 px-4 xs:px-6 sm:px-8 py-2 xs:py-2.5 rounded-md xs:rounded-lg text-[9px] xs:text-[10px] sm:text-[11px] font-black uppercase tracking-wider transition-all ${
-                  selectedCourse === course 
-                  ? "bg-white text-[#7d1a1a] shadow-sm" 
-                  : "text-gray-500 hover:text-gray-700"
-                }`}
-              >
-                {course}
-              </button>
-            ))}
-          </div>
-        )}
+        <div className="flex bg-gray-100 p-0.5 xs:p-1 rounded-lg xs:rounded-xl w-full">
+          {[
+            { value: "all", label: "All" },
+            { value: "BSABE", label: "BSABE" },
+            { value: "BSGE", label: "BSGE" },
+          ].map((option) => (
+            <button
+              key={option.value}
+              onClick={() => setSelectedCourse(option.value as any)}
+              className={`flex-1 px-4 xs:px-6 sm:px-8 py-2 xs:py-2.5 rounded-md xs:rounded-lg text-[9px] xs:text-[10px] sm:text-[11px] font-black uppercase tracking-wider transition-all ${
+                selectedCourse === option.value 
+                ? "bg-white text-[#7d1a1a] shadow-sm" 
+                : "text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
 
         <div className="flex items-center gap-2">
           <div className="relative flex-1">
             <Search className="absolute left-2 xs:left-3 top-1/2 -translate-y-1/2 text-gray-400" size={14} />
             <input 
               type="text" 
-              placeholder="Search by name, email or student number..." 
+              placeholder="Search by name, email or department..." 
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-7 xs:pl-10 pr-3 xs:pr-4 py-2 xs:py-2.5 bg-gray-50 border border-gray-200 rounded-lg xs:rounded-xl text-xs xs:text-sm focus:outline-none focus:ring-2 focus:ring-[#7d1a1a]/10 transition-all placeholder:text-[10px] xs:placeholder:text-xs"
+              className="w-full pl-7 text-slate-800 xs:pl-10 pr-3 xs:pr-4 py-2 xs:py-2.5 bg-gray-50 border border-gray-200 rounded-lg xs:rounded-xl text-xs xs:text-sm focus:outline-none focus:ring-2 focus:ring-[#7d1a1a]/10 transition-all placeholder:text-[10px] xs:placeholder:text-xs"
             />
           </div>
         </div>
@@ -248,8 +249,8 @@ export default function StudentApprovalPage() {
           <table className="w-full text-left border-collapse relative">
             <thead className="sticky top-0 z-10 bg-gray-50/90 backdrop-blur-md">
               <tr className="text-[10px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-200">
-                <th className="px-8 py-4">Student Info</th>
-                <th className="px-6 py-4">Course/Major</th>
+                <th className="px-8 py-4">Coordinator Info</th>
+                <th className="px-6 py-4">Course/Department</th>
                 <th className="px-6 py-4">Date Applied</th>
                 <th className="px-6 py-4">Verification</th>
                 <th className="px-8 py-4 text-right">Actions</th>
@@ -262,30 +263,33 @@ export default function StudentApprovalPage() {
                     <Loader2 size={32} className="animate-spin text-[#7d1a1a] mx-auto" />
                   </td>
                 </tr>
-              ) : filteredStudents.length > 0 ? filteredStudents.map((student) => (
-                <tr key={student._id} className="hover:bg-gray-50/50 transition-colors group">
+              ) : filteredCoordinators.length > 0 ? filteredCoordinators.map((coordinator) => (
+                <tr key={coordinator._id} className="hover:bg-gray-50/50 transition-colors group">
                   <td className="px-8 py-5">
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-gray-200 overflow-hidden border-2 border-white shadow-sm group-hover:border-[#7d1a1a]/20 transition-all">
-                        <Image src="/engr.png" alt="Avatar" width={40} height={40} className="object-cover" />
+                      <div className="w-10 h-10 rounded-xl bg-[#7d1a1a] flex items-center justify-center text-white font-black text-xs shadow-inner">
+                        {coordinator.name.split(' ').map(n => n[0]).join('').slice(0,2)}
                       </div>
                       <div>
-                        <p className="text-sm font-black text-gray-900 leading-none">{student.name}</p>
-                        <p className="text-[11px] text-gray-400 font-bold mt-1 tracking-tight">{student.studentNumber}</p>
+                        <p className="text-sm font-black text-gray-900 leading-none">{coordinator.name}</p>
+                        <p className="text-[11px] text-gray-400 font-bold mt-1 tracking-tight flex items-center gap-1">
+                          <Mail size={10} />
+                          {coordinator.email}
+                        </p>
                       </div>
                     </div>
                   </td>
                   <td className="px-6 py-5">
                     <div className="flex flex-col">
-                      <span className="text-xs font-bold text-gray-700">{student.course}</span>
-                      <span className="text-[10px] text-gray-400 font-medium">Engineering Dept</span>
+                      <span className="text-xs font-bold text-gray-700">{coordinator.course}</span>
+                      <span className="text-[10px] text-gray-400 font-medium">{coordinator.department}</span>
                     </div>
                   </td>
                   <td className="px-6 py-5">
                     <div className="flex items-center gap-2 text-gray-500">
                       <Calendar size={14} />
                       <span className="text-xs font-bold">
-                        {new Date(student.createdAt).toLocaleDateString()}
+                        {new Date(coordinator.createdAt).toLocaleDateString()}
                       </span>
                     </div>
                   </td>
@@ -297,12 +301,12 @@ export default function StudentApprovalPage() {
                   <td className="px-8 py-5 text-right">
                     <div className="flex items-center justify-end gap-2">
                       <button 
-                        onClick={() => handleAction(student._id, "approve")}
-                        disabled={approving === student._id}
+                        onClick={() => handleAction(coordinator._id, "approve")}
+                        disabled={approving === coordinator._id}
                         className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 text-white rounded-lg font-bold text-[10px] uppercase tracking-wide hover:bg-emerald-700 hover:shadow-lg hover:shadow-emerald-200 transition-all active:scale-95 disabled:opacity-60"
-                        aria-label="Approve student"
+                        aria-label="Approve coordinator"
                       >
-                        {approving === student._id ? (
+                        {approving === coordinator._id ? (
                           <Loader2 size={14} className="animate-spin" />
                         ) : (
                           <Check size={14} />
@@ -310,10 +314,10 @@ export default function StudentApprovalPage() {
                         Approve
                       </button>
                       <button 
-                        onClick={() => handleAction(student._id, "reject")}
-                        disabled={approving === student._id}
+                        onClick={() => handleAction(coordinator._id, "reject")}
+                        disabled={approving === coordinator._id}
                         className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all disabled:opacity-60"
-                        aria-label="Reject student"
+                        aria-label="Reject coordinator"
                       >
                         <X size={18} />
                       </button>
@@ -332,7 +336,7 @@ export default function StudentApprovalPage() {
                     <div className="flex flex-col items-center justify-center opacity-30">
                       <UserCheck size={48} className="text-gray-400" />
                       <p className="mt-4 font-black uppercase tracking-widest text-sm text-gray-500">Queue is Clear</p>
-                      <p className="text-xs font-bold">No pending applications</p>
+                      <p className="text-xs font-bold">No pending coordinator applications</p>
                     </div>
                   </td>
                 </tr>
@@ -348,32 +352,27 @@ export default function StudentApprovalPage() {
           <div className="flex justify-center py-12">
             <Loader2 size={32} className="animate-spin text-[#7d1a1a]" />
           </div>
-        ) : filteredStudents.length > 0 ? filteredStudents.map((student) => (
+        ) : filteredCoordinators.length > 0 ? filteredCoordinators.map((coordinator) => (
           <div 
-            key={student._id} 
+            key={coordinator._id} 
             className="bg-white rounded-xl xs:rounded-2xl border border-gray-200 shadow-sm p-3 xs:p-4 hover:shadow-md transition-all"
           >
             {/* Card Header */}
             <div className="flex items-start gap-2 xs:gap-3 mb-3 xs:mb-4">
-              <div className="w-12 h-12 xs:w-14 xs:h-14 rounded-full bg-gray-200 overflow-hidden border-2 border-white shadow-sm flex-shrink-0">
-                <Image 
-                  src="/engr.png" 
-                  alt={student.name} 
-                  width={56} 
-                  height={56} 
-                  className="object-cover" 
-                />
+              <div className="w-12 h-12 xs:w-14 xs:h-14 rounded-xl xs:rounded-2xl bg-[#7d1a1a] flex items-center justify-center text-white font-black text-xs xs:text-sm shadow-inner flex-shrink-0">
+                {coordinator.name.split(' ').map(n => n[0]).join('').slice(0,2)}
               </div>
               <div className="flex-1 min-w-0">
                 <h3 className="text-sm xs:text-base font-black text-gray-900 leading-none mb-1 truncate">
-                  {student.name}
+                  {coordinator.name}
                 </h3>
-                <p className="text-[10px] xs:text-[11px] text-gray-400 font-bold mb-1.5 xs:mb-2">
-                  {student.studentNumber}
+                <p className="text-[10px] xs:text-[11px] text-gray-400 font-bold mb-1.5 xs:mb-2 truncate flex items-center gap-1">
+                  <Mail size={10} />
+                  {coordinator.email}
                 </p>
                 <div className="flex items-center gap-1.5 xs:gap-2 flex-wrap">
                   <span className="text-[9px] xs:text-[10px] font-bold text-gray-600 bg-gray-100 px-1.5 xs:px-2 py-0.5 xs:py-1 rounded uppercase">
-                    {student.course}
+                    {coordinator.course}
                   </span>
                   <span className="inline-flex items-center gap-1 px-1.5 xs:px-2 py-0.5 xs:py-1 rounded-full bg-amber-50 text-amber-700 text-[8px] xs:text-[9px] font-black uppercase">
                     Pending
@@ -385,9 +384,9 @@ export default function StudentApprovalPage() {
             {/* Card Details */}
             <div className="space-y-2 xs:space-y-2.5 mb-3 xs:mb-4 pb-3 xs:pb-4 border-b border-gray-100">
               <div className="flex items-center justify-between text-xs xs:text-sm">
-                <span className="text-gray-500 font-medium text-[10px] xs:text-xs">Email:</span>
-                <span className="font-bold text-gray-700 text-[10px] xs:text-xs truncate ml-2">
-                  {student.email}
+                <span className="text-gray-500 font-medium text-[10px] xs:text-xs">Department:</span>
+                <span className="font-bold text-gray-700 text-[10px] xs:text-xs">
+                  {coordinator.department}
                 </span>
               </div>
               <div className="flex items-center justify-between text-xs xs:text-sm">
@@ -395,7 +394,7 @@ export default function StudentApprovalPage() {
                 <div className="flex items-center gap-1 xs:gap-1.5">
                   <Calendar size={12} className="text-gray-400 xs:w-3.5 xs:h-3.5" />
                   <span className="font-bold text-gray-700 text-[10px] xs:text-xs">
-                    {new Date(student.createdAt).toLocaleDateString()}
+                    {new Date(coordinator.createdAt).toLocaleDateString()}
                   </span>
                 </div>
               </div>
@@ -404,11 +403,11 @@ export default function StudentApprovalPage() {
             {/* Card Actions */}
             <div className="flex items-center gap-1.5 xs:gap-2">
               <button 
-                onClick={() => handleAction(student._id, "approve")}
-                disabled={approving === student._id}
+                onClick={() => handleAction(coordinator._id, "approve")}
+                disabled={approving === coordinator._id}
                 className="flex-1 flex items-center justify-center gap-1 xs:gap-1.5 px-3 xs:px-4 py-2 xs:py-2.5 bg-emerald-600 text-white rounded-lg xs:rounded-xl font-bold text-[10px] xs:text-xs hover:bg-emerald-700 transition-all active:scale-95 disabled:opacity-60"
               >
-                {approving === student._id ? (
+                {approving === coordinator._id ? (
                   <Loader2 size={14} className="animate-spin xs:w-4 xs:h-4" />
                 ) : (
                   <Check size={14} className="xs:w-4 xs:h-4" />
@@ -416,10 +415,10 @@ export default function StudentApprovalPage() {
                 <span>Approve</span>
               </button>
               <button 
-                onClick={() => handleAction(student._id, "reject")}
-                disabled={approving === student._id}
+                onClick={() => handleAction(coordinator._id, "reject")}
+                disabled={approving === coordinator._id}
                 className="p-2 xs:p-2.5 text-gray-400 hover:text-red-600 hover:bg-red-50 border border-gray-200 rounded-lg xs:rounded-xl transition-all active:scale-95 flex-shrink-0 disabled:opacity-60"
-                aria-label="Reject student"
+                aria-label="Reject coordinator"
               >
                 <X size={16} className="xs:w-[18px] xs:h-[18px]" />
               </button>
@@ -440,7 +439,7 @@ export default function StudentApprovalPage() {
               Queue is Clear
             </p>
             <p className="text-[10px] xs:text-xs font-bold text-gray-400">
-              No pending applications
+              No pending coordinator applications
             </p>
           </div>
         )}

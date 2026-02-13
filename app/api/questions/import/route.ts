@@ -14,6 +14,11 @@ function normalizeText(text: string): string {
   return text.trim().toLowerCase().replace(/\s+/g, " ");
 }
 
+// Create a unique key for duplicate detection: course + subject + questionText
+function createDuplicateKey(course: string, subject: string, questionText: string): string {
+  return `${course.toUpperCase()}::${normalizeText(subject)}::${normalizeText(questionText)}`;
+}
+
 function validateRow(row: ImportRow, rowNum: number): string | null {
   if (!row.question_text?.trim()) return `Row ${rowNum}: question_text is required`;
   if (!row.option_a?.trim()) return `Row ${rowNum}: option_a is required`;
@@ -111,13 +116,18 @@ export async function POST(request: NextRequest) {
       duplicatesInDb: [],
     };
 
-    // Track normalized texts seen in this file to catch internal duplicates
+    // Track seen questions in this file (by course + subject + text)
     const seenInFile = new Map<string, number>();
 
-    // Pre-load all existing question texts from DB into a Set for fast lookup
-    const existingTexts = new Set<string>(
-      (await questionsCol.find({}, { projection: { questionText: 1 } }).toArray()).map((q) =>
-        normalizeText(q.questionText)
+    // Pre-load all existing questions from DB with course, subject, and questionText
+    const existingQuestions = await questionsCol
+      .find({}, { projection: { course: 1, subject: 1, questionText: 1 } })
+      .toArray();
+
+    // Build a Set of unique keys for fast duplicate lookup
+    const existingKeys = new Set<string>(
+      existingQuestions.map((q) =>
+        createDuplicateKey(q.course, q.subject, q.questionText)
       )
     );
 
@@ -137,30 +147,32 @@ export async function POST(request: NextRequest) {
         continue;
       }
 
-      const normalized = normalizeText(rawText);
+      const course = String(row.course).trim() as CourseType;
+      const subject = String(row.subject).trim();
+      const duplicateKey = createDuplicateKey(course, subject, rawText);
 
       // Duplicate within file
-      if (seenInFile.has(normalized)) {
+      if (seenInFile.has(duplicateKey)) {
         result.duplicatesInFile.push({
           row: rowNum,
-          text: rawText.substring(0, 100),
+          text: `[${course}/${subject}] ${rawText.substring(0, 80)}`,
         });
         result.skipped++;
         continue;
       }
 
       // Duplicate in database
-      if (existingTexts.has(normalized)) {
+      if (existingKeys.has(duplicateKey)) {
         result.duplicatesInDb.push({
           row: rowNum,
-          text: rawText.substring(0, 100),
+          text: `[${course}/${subject}] ${rawText.substring(0, 80)}`,
         });
         result.skipped++;
         continue;
       }
 
-      seenInFile.set(normalized, rowNum);
-      existingTexts.add(normalized); // prevent later rows from matching what we're about to insert
+      seenInFile.set(duplicateKey, rowNum);
+      existingKeys.add(duplicateKey); // prevent later rows from matching what we're about to insert
 
       toInsert.push({
         questionText: rawText,
@@ -171,8 +183,8 @@ export async function POST(request: NextRequest) {
         correctAnswer: String(row.correct_answer).trim().toUpperCase() as CorrectAnswer,
         difficulty: row.difficulty.trim() as DifficultyType,
         category: String(row.category).trim(),
-        course: String(row.course).trim() as CourseType,
-        subject: String(row.subject).trim(),
+        course: course,
+        subject: subject,
         explanation: row.explanation ? String(row.explanation).trim() : undefined,
         createdBy: new ObjectId(userId),
         createdByName: user.name,

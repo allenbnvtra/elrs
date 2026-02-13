@@ -1,18 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import clientPromise, { dbName } from "@/lib/mongodb";
-import { User, Student, Faculty, sanitizeUser } from "@/models/User";
+import { User, Faculty, Admin, sanitizeUser } from "@/models/User";
 
-// ─── POST /api/students/approve ────────────────────────────────────────────────
+// ─── POST /api/coordinators/approve ────────────────────────────────────────────
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { studentId, userId, action } = body;
+    const { coordinatorId, userId, action } = body;
 
     // Validation
-    if (!studentId || !userId) {
+    if (!coordinatorId || !userId) {
       return NextResponse.json(
-        { error: "Missing required fields: studentId and userId" },
+        { error: "Missing required fields: coordinatorId and userId" },
         { status: 400 }
       );
     }
@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!ObjectId.isValid(studentId) || !ObjectId.isValid(userId)) {
+    if (!ObjectId.isValid(coordinatorId) || !ObjectId.isValid(userId)) {
       return NextResponse.json(
         { error: "Invalid ID format" },
         { status: 400 }
@@ -41,56 +41,43 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
-    // Check authorization
-    if (user.role !== "admin" && user.role !== "faculty") {
+    // Check authorization - ONLY admins can approve coordinators
+    if (user.role !== "admin") {
       return NextResponse.json(
-        { error: "Unauthorized. Only admin and faculty can approve students." },
+        { error: "Unauthorized. Only administrators can approve coordinators." },
         { status: 403 }
       );
     }
 
-    // Get the student to approve
-    const student = await usersCol.findOne({
-      _id: new ObjectId(studentId),
-      role: "student",
-    }) as Student | null;
+    // Get the coordinator to approve
+    const coordinator = await usersCol.findOne({
+      _id: new ObjectId(coordinatorId),
+      role: "faculty",
+    }) as Faculty | null;
 
-    if (!student) {
+    if (!coordinator) {
       return NextResponse.json(
-        { error: "Student not found" },
+        { error: "Coordinator not found" },
         { status: 404 }
       );
     }
 
-    // Faculty can only approve students from their course
-    if (user.role === "faculty") {
-      const faculty = user as Faculty;
-      if (faculty.course !== student.course) {
-        return NextResponse.json(
-          {
-            error: `Unauthorized. Faculty can only approve students from ${faculty.course} course.`,
-          },
-          { status: 403 }
-        );
-      }
-    }
-
-    // Check if student is already approved/rejected
-    if (student.status === "approved") {
+    // Check if coordinator is already approved/rejected
+    if (coordinator.status === "approved") {
       return NextResponse.json(
-        { error: "Student is already approved" },
+        { error: "Coordinator is already approved" },
         { status: 400 }
       );
     }
 
-    if (student.status === "rejected") {
+    if (coordinator.status === "rejected") {
       return NextResponse.json(
-        { error: "Student is already rejected" },
+        { error: "Coordinator is already rejected" },
         { status: 400 }
       );
     }
 
-    // Update student status
+    // Update coordinator status
     const now = new Date();
     const updateData: any = {
       status: action === "approve" ? "approved" : "rejected",
@@ -104,28 +91,28 @@ export async function POST(request: NextRequest) {
     }
 
     const result = await usersCol.updateOne(
-      { _id: new ObjectId(studentId) },
+      { _id: new ObjectId(coordinatorId) },
       { $set: updateData }
     );
 
     if (result.matchedCount === 0) {
       return NextResponse.json(
-        { error: "Failed to update student" },
+        { error: "Failed to update coordinator" },
         { status: 500 }
       );
     }
 
-    // Get updated student
-    const updatedStudent = await usersCol.findOne({
-      _id: new ObjectId(studentId),
-    }) as Student;
+    // Get updated coordinator
+    const updatedCoordinator = await usersCol.findOne({
+      _id: new ObjectId(coordinatorId),
+    }) as Faculty;
 
     return NextResponse.json({
-      message: `Student ${action === "approve" ? "approved" : "rejected"} successfully`,
-      student: sanitizeUser(updatedStudent),
+      message: `Coordinator ${action === "approve" ? "approved" : "rejected"} successfully`,
+      coordinator: sanitizeUser(updatedCoordinator),
     });
   } catch (error) {
-    console.error("POST /api/students/approve error:", error);
+    console.error("POST /api/coordinators/approve error:", error);
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }
@@ -133,8 +120,8 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// ─── GET /api/students/approve ────────────────────────────────────────────────
-// Get pending students (for approval page)
+// ─── GET /api/coordinators/approve ────────────────────────────────────────────
+// Get pending coordinators (for approval page)
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
@@ -163,40 +150,36 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
-    // Check authorization
-    if (user.role !== "admin" && user.role !== "faculty") {
+    // Check authorization - ONLY admins can view coordinators
+    if (user.role !== "admin") {
       return NextResponse.json(
-        { error: "Unauthorized" },
+        { error: "Unauthorized. Only administrators can view coordinators." },
         { status: 403 }
       );
     }
 
     // Build filter
     const filter: any = {
-      role: "student",
+      role: "faculty",
       status: status,
     };
 
-    // Faculty can only see students from their course
-    if (user.role === "faculty") {
-      const faculty = user as Faculty;
-      filter.course = faculty.course;
-    } else if (course) {
-      // Admin can filter by course
+    // Admin can filter by course
+    if (course) {
       filter.course = course;
     }
 
-    const students = await usersCol
+    const coordinators = await usersCol
       .find(filter)
       .sort({ createdAt: -1 })
       .toArray();
 
     return NextResponse.json({
-      students: students.map(sanitizeUser),
-      total: students.length,
+      coordinators: coordinators.map(sanitizeUser),
+      total: coordinators.length,
     });
   } catch (error) {
-    console.error("GET /api/students/approve error:", error);
+    console.error("GET /api/coordinators/approve error:", error);
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }

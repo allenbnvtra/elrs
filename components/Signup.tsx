@@ -13,7 +13,6 @@ import {
   IdCard,
   AlertCircle,
   CheckCircle,
-  GraduationCap,
   Briefcase,
   BookOpen,
 } from "lucide-react";
@@ -22,7 +21,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 type UserType = "student" | "faculty" | "admin";
-type CourseType = "BSGE" | "BSABEN";
+type CourseType = "BSGE" | "BSABE";
 
 const SignUpPage: React.FC = () => {
   const router = useRouter();
@@ -30,6 +29,7 @@ const SignUpPage: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
+  const [successMessage, setSuccessMessage] = useState("");
   const [userType, setUserType] = useState<UserType>("student");
   
   const [formData, setFormData] = useState({
@@ -75,11 +75,12 @@ const SignUpPage: React.FC = () => {
 
       // Success
       setSuccess(true);
+      setSuccessMessage(data.message || "Account created successfully");
       
-      // Redirect to login after 2 seconds
+      // Redirect to login after 3 seconds
       setTimeout(() => {
         router.push("/");
-      }, 2000);
+      }, 3000);
 
     } catch (err) {
       setError(err instanceof Error ? err.message : "Registration failed");
@@ -166,9 +167,10 @@ const SignUpPage: React.FC = () => {
           {success && (
             <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-xl flex items-start gap-3">
               <CheckCircle className="text-green-600 flex-shrink-0 mt-0.5" size={18} />
-              <p className="text-sm text-green-800">
-                Account created successfully! Redirecting to login...
-              </p>
+              <div className="text-sm text-green-800">
+                <p className="font-bold mb-1">{successMessage}</p>
+                <p className="text-xs">Redirecting to login page...</p>
+              </div>
             </div>
           )}
 
@@ -195,10 +197,22 @@ const SignUpPage: React.FC = () => {
                   }}
                 >
                   <option value="student">Student</option>
-                  <option value="faculty">Faculty</option>
+                  <option value="faculty">Faculty / Coordinator</option>
                   <option value="admin">Administrator</option>
                 </select>
               </div>
+              {userType === "faculty" && (
+                <p className="text-xs text-amber-600 mt-1 px-1 flex items-center gap-1">
+                  <AlertCircle size={12} />
+                  Faculty accounts require admin approval
+                </p>
+              )}
+              {userType === "student" && (
+                <p className="text-xs text-blue-600 mt-1 px-1 flex items-center gap-1">
+                  <AlertCircle size={12} />
+                  Student accounts require verification
+                </p>
+              )}
             </div>
 
             {/* Course Selection - Only for students and faculty */}
@@ -222,7 +236,7 @@ const SignUpPage: React.FC = () => {
                   >
                     <option value="">Select Course</option>
                     <option value="BSGE">BS in Geodetic Engineering (BSGE)</option>
-                    <option value="BSABEN">BS in Agricultural & Biosystems Engineering (BSABEN)</option>
+                    <option value="BSABE">BS in Agricultural & Biosystems Engineering (BSABE)</option>
                   </select>
                 </div>
               </div>

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import clientPromise, { dbName } from "@/lib/mongodb";
 import { verifyPassword, generateToken } from "@/lib/auth";
-import { User } from "@/models/User";
+import { User, Student, Faculty } from "@/models/User";
 
 export async function POST(request: NextRequest) {
   try {
@@ -47,6 +47,35 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Check account approval status for students and faculty
+    if (user.role === "student" || user.role === "faculty") {
+      const userWithStatus = user as Student | Faculty;
+      
+      if (userWithStatus.status === "pending") {
+        console.log("⏳ Account pending approval for:", email);
+        return NextResponse.json(
+          { 
+            error: user.role === "student" 
+              ? "Your account is pending approval. Please wait for verification from your coordinator or administrator."
+              : "Your coordinator account is pending admin approval. Please wait for verification.",
+            status: "pending"
+          },
+          { status: 403 }
+        );
+      }
+
+      if (userWithStatus.status === "rejected") {
+        console.log("❌ Account rejected for:", email);
+        return NextResponse.json(
+          { 
+            error: "Your account has been rejected. Please contact support for more information.",
+            status: "rejected"
+          },
+          { status: 403 }
+        );
+      }
+    }
+
     // Generate JWT token
     const token = generateToken({
       userId: user._id!.toString(),
@@ -58,20 +87,28 @@ export async function POST(request: NextRequest) {
     console.log("✅ Login successful for:", email, "Role:", user.role);
 
     // Create response with user data (excluding password)
-    const userData = {
+    const userData: any = {
       id: user._id!.toString(),
       name: user.name,
       email: user.email,
       role: user.role,
-      ...(user.role === "student" && { 
-        studentNumber: (user as any).studentNumber,
-        enrolledCourseIds: (user as any).enrolledCourseIds || [],
-      }),
-      ...(user.role === "faculty" && { 
-        department: (user as any).department,
-        courseIdsTeaching: (user as any).courseIdsTeaching || [],
-      }),
     };
+
+    // Add role-specific fields
+    if (user.role === "student") {
+      const student = user as Student;
+      userData.studentNumber = student.studentNumber;
+      userData.course = student.course;
+      userData.status = student.status;
+      userData.enrolledCourseIds = student.enrolledCourseIds || [];
+    } else if (user.role === "faculty") {
+      const faculty = user as Faculty;
+      userData.course = faculty.course;
+      userData.department = faculty.department;
+      userData.status = faculty.status;
+      userData.contributions = faculty.contributions || 0;
+      userData.courseIdsTeaching = faculty.courseIdsTeaching || [];
+    }
 
     const response = NextResponse.json(
       {
