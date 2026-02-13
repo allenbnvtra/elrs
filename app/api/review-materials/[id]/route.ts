@@ -6,10 +6,10 @@ import { User } from "@/models/User";
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = params;
+    const { id } = await params; // ← await params here
     const { searchParams } = new URL(request.url);
     const userId = searchParams.get("userId");
 
