@@ -12,7 +12,7 @@ import {
 interface Score {
   studentId: string;
   name: string;
-  course: "BSABE" | "BSGE";
+  course: "BSABEN" | "BSGE";
   examsTaken: number;
   averageScore: number;
   highestScore: number;
@@ -37,7 +37,7 @@ interface Pagination {
 }
 
 export default function ScoresPage() {
-  const [selectedCourse, setSelectedCourse] = useState<"BSABE" | "BSGE">("BSABE");
+  const [selectedCourse, setSelectedCourse] = useState<"BSABEN" | "BSGE">("BSABEN");
   const [searchQuery, setSearchQuery] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
   const [currentPage, setCurrentPage] = useState(1);
@@ -277,7 +277,7 @@ export default function ScoresPage() {
       {/* FILTERS & SEARCH */}
       <div className="flex flex-col gap-3 xs:gap-4 bg-white p-3 xs:p-4 rounded-xl xs:rounded-2xl border border-gray-200/60 shadow-sm">
         <div className="flex bg-gray-100 p-0.5 xs:p-1 rounded-lg xs:rounded-xl w-full">
-          {(["BSABE", "BSGE"] as const).map((course) => (
+          {(["BSABEN", "BSGE"] as const).map((course) => (
             <button
               key={course}
               onClick={() => setSelectedCourse(course)}

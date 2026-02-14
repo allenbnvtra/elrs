@@ -5,7 +5,7 @@ import {
   Plus, Search, Filter, Edit3, Trash2, Layers, ChevronLeft,
   ChevronRight, X, Download, CheckCircle2, AlertCircle,
   Loader2, FileSpreadsheet, AlertTriangle, BookOpen, ArrowLeft, FileText,
-  GraduationCap
+  GraduationCap, Power, Eye, EyeOff
 } from "lucide-react";
 import { useAuth } from "@/contexts/authContext";
 
@@ -14,7 +14,6 @@ interface Subject {
   _id: string;
   name: string;
   description?: string;
-  course: "BSABEN" | "BSGE";
   questionCount: number;
   createdAt: string;
 }
@@ -29,9 +28,9 @@ interface Question {
   correctAnswer: "A" | "B" | "C" | "D";
   difficulty: "Easy" | "Medium" | "Hard";
   category: string;
-  course: "BSABEN" | "BSGE";
   subject: string;
   explanation?: string;
+  isActive: boolean;
   createdAt: string;
 }
 
@@ -59,9 +58,9 @@ type FormData = {
   correctAnswer: "A" | "B" | "C" | "D";
   difficulty: "Easy" | "Medium" | "Hard";
   category: string;
-  course: "BSABEN" | "BSGE";
   subject: string;
   explanation: string;
+  isActive: boolean;
 };
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -74,9 +73,9 @@ const EMPTY_FORM: FormData = {
   correctAnswer: "A",
   difficulty: "Medium",
   category: "",
-  course: "BSABEN",
   subject: "",
   explanation: "",
+  isActive: true,
 };
 
 const DIFFICULTY_STYLES: Record<string, string> = {
@@ -103,14 +102,12 @@ function QuestionModal({
   onSaved,
   userId,
   defaultSubject,
-  defaultCourse,
 }: {
   editQuestion: Question | null;
   onClose: () => void;
   onSaved: () => void;
   userId: string;
   defaultSubject?: string;
-  defaultCourse?: "BSABEN" | "BSGE";
 }) {
   const isEdit = !!editQuestion;
 
@@ -125,20 +122,18 @@ function QuestionModal({
           correctAnswer: editQuestion.correctAnswer,
           difficulty: editQuestion.difficulty,
           category: editQuestion.category,
-          course: editQuestion.course,
           subject: editQuestion.subject,
           explanation: editQuestion.explanation ?? "",
+          isActive: editQuestion.isActive ?? true,
         }
       : { 
           ...EMPTY_FORM, 
-          subject: defaultSubject || "",
-          course: defaultCourse || "BSABEN"
+          subject: defaultSubject || ""
         }
   );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   
-  // Track whether to show option C and D fields
   const [showOptionC, setShowOptionC] = useState(
     isEdit ? (!!editQuestion.optionC || editQuestion.correctAnswer === "C" || editQuestion.correctAnswer === "D") : false
   );
@@ -152,10 +147,9 @@ function QuestionModal({
     return () => window.removeEventListener("keydown", handler);
   }, [onClose]);
 
-  const set = (field: keyof FormData, value: string) =>
+  const set = (field: keyof FormData, value: string | boolean) =>
     setForm((prev) => ({ ...prev, [field]: value }));
   
-  // Auto-show C if it's the correct answer, or if D is shown
   useEffect(() => {
     if (form.correctAnswer === "C" || form.correctAnswer === "D") {
       setShowOptionC(true);
@@ -187,6 +181,7 @@ function QuestionModal({
         optionC: form.optionC.trim() || undefined,
         optionD: form.optionD.trim() || undefined,
         explanation: form.explanation.trim() || undefined,
+        course: "BSGE",
         userId,
       };
 
@@ -238,13 +233,39 @@ function QuestionModal({
             </div>
           )}
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          {/* Active/Inactive Toggle */}
+          <div className="flex items-center justify-between p-4 bg-gray-50 rounded-xl border border-gray-200">
+            <div className="flex items-center gap-3">
+              <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${form.isActive ? "bg-emerald-100" : "bg-gray-200"}`}>
+                {form.isActive ? <Eye size={18} className="text-emerald-600" /> : <EyeOff size={18} className="text-gray-500" />}
+              </div>
+              <div>
+                <p className="text-sm font-bold text-gray-900">Question Status</p>
+                <p className="text-xs text-gray-500">
+                  {form.isActive ? "This question is active and visible" : "This question is inactive and hidden"}
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => set("isActive", !form.isActive)}
+              className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors ${
+                form.isActive ? "bg-emerald-500" : "bg-gray-300"
+              }`}
+            >
+              <span
+                className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-sm transition-transform ${
+                  form.isActive ? "translate-x-6" : "translate-x-1"
+                }`}
+              />
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className={labelCls}>Course *</label>
-              <select value={form.course} onChange={(e) => set("course", e.target.value)} className={inputCls} disabled={!!defaultCourse}>
-                <option value="BSABEN">BSABEN</option>
-                <option value="BSGE">BSGE</option>
-              </select>
+              <label className={labelCls}>Subject *</label>
+              <input type="text" placeholder="e.g. Surveying, Geodesy" value={form.subject}
+                onChange={(e) => set("subject", e.target.value)} className={inputCls} disabled={!!defaultSubject} />
             </div>
             <div>
               <label className={labelCls}>Difficulty *</label>
@@ -254,16 +275,11 @@ function QuestionModal({
                 <option>Hard</option>
               </select>
             </div>
-            <div>
-              <label className={labelCls}>Subject *</label>
-              <input type="text" placeholder="e.g. Hydraulics" value={form.subject}
-                onChange={(e) => set("subject", e.target.value)} className={inputCls} disabled={!!defaultSubject} />
-            </div>
           </div>
 
           <div>
             <label className={labelCls}>Category *</label>
-            <input type="text" placeholder="e.g. Engineering Science, Laws & Ethics, Mathematics"
+            <input type="text" placeholder="e.g. Professional Practice, Laws & Ethics, Remote Sensing"
               value={form.category} onChange={(e) => set("category", e.target.value)} className={inputCls} />
           </div>
 
@@ -364,9 +380,7 @@ function QuestionModal({
   );
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// Import Result Modal
-// ═══════════════════════════════════════════════════════════════════════════════
+// Import Result Modal (same as before)
 function ImportResultModal({ result, onClose }: { result: ImportResult; onClose: () => void }) {
   const totalDups = result.duplicatesInFile.length + result.duplicatesInDb.length;
   const hasIssues = result.errors.length > 0 || totalDups > 0;
@@ -464,14 +478,11 @@ function ImportResultModal({ result, onClose }: { result: ImportResult; onClose:
   );
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// Main Component
-// ═══════════════════════════════════════════════════════════════════════════════
-export default function QuestionsPageWithSubjects() {
+// Main Component - BSGE Questions
+export default function BSGEQuestionsPage() {
   const { user } = useAuth();
   const USER_ID = user?.id;
 
-  const [selectedCourse, setSelectedCourse] = useState<"BSABEN" | "BSGE">("BSABEN");
   const [currentView, setCurrentView] = useState<"subjects" | string>("subjects");
   const [selectedSubject, setSelectedSubject] = useState<Subject | null>(null);
 
@@ -493,6 +504,7 @@ export default function QuestionsPageWithSubjects() {
   const [showFilters, setShowFilters] = useState(false);
   const [filterCategory, setFilterCategory] = useState("");
   const [filterDifficulty, setFilterDifficulty] = useState("");
+  const [filterStatus, setFilterStatus] = useState<"all" | "active" | "inactive">("all");
 
   // Modal state
   const [showQuestionModal, setShowQuestionModal] = useState(false);
@@ -505,14 +517,14 @@ export default function QuestionsPageWithSubjects() {
   const [downloadingTemplate, setDownloadingTemplate] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // ── Fetch Subjects ────────────────────────────────────────────────────────────
+  // Fetch Subjects
   const fetchSubjects = useCallback(async () => {
     if (!USER_ID) return;
     setLoadingSubjects(true);
     setError("");
 
     try {
-      const params = new URLSearchParams({ course: selectedCourse });
+      const params = new URLSearchParams({ course: "BSGE" });
       if (subjectSearchQuery) params.set("search", subjectSearchQuery);
 
       const res = await fetch(`/api/subjects?${params}`);
@@ -523,16 +535,16 @@ export default function QuestionsPageWithSubjects() {
         return;
       }
 
-      setSubjects(data.subjects);
+      setSubjects(data.subjects || []);
     } catch (err) {
       setError("Failed to load subjects");
       console.error(err);
     } finally {
       setLoadingSubjects(false);
     }
-  }, [USER_ID, selectedCourse, subjectSearchQuery]);
+  }, [USER_ID, subjectSearchQuery]);
 
-  // ── Fetch Questions ───────────────────────────────────────────────────────────
+  // Fetch Questions
   const fetchQuestions = useCallback(async () => {
     if (!USER_ID || !selectedSubject) return;
     setLoadingQuestions(true);
@@ -540,7 +552,7 @@ export default function QuestionsPageWithSubjects() {
 
     try {
       const params = new URLSearchParams({
-        course: selectedCourse,
+        course: "BSGE",
         subject: selectedSubject.name,
         page: String(currentPage),
         limit: "12"
@@ -548,6 +560,7 @@ export default function QuestionsPageWithSubjects() {
       if (searchQuery) params.set("search", searchQuery);
       if (filterCategory) params.set("category", filterCategory);
       if (filterDifficulty) params.set("difficulty", filterDifficulty);
+      if (filterStatus !== "all") params.set("isActive", filterStatus === "active" ? "true" : "false");
 
       const res = await fetch(`/api/questions?${params}`);
       const data = await res.json();
@@ -557,17 +570,17 @@ export default function QuestionsPageWithSubjects() {
         return;
       }
 
-      setQuestions(data.questions);
-      setPagination(data.pagination);
+      setQuestions(data.questions || []);
+      setPagination(data.pagination || null);
     } catch (err) {
       setError("Failed to load questions");
       console.error(err);
     } finally {
       setLoadingQuestions(false);
     }
-  }, [USER_ID, selectedCourse, selectedSubject, currentPage, searchQuery, filterCategory, filterDifficulty]);
+  }, [USER_ID, selectedSubject, currentPage, searchQuery, filterCategory, filterDifficulty, filterStatus]);
 
-  // ── Effects ───────────────────────────────────────────────────────────────────
+  // Effects
   useEffect(() => {
     if (currentView === "subjects") {
       fetchSubjects();
@@ -582,9 +595,9 @@ export default function QuestionsPageWithSubjects() {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, filterCategory, filterDifficulty]);
+  }, [searchQuery, filterCategory, filterDifficulty, filterStatus]);
 
-  // ── Subject Handlers ──────────────────────────────────────────────────────────
+  // Subject handlers
   const openAddSubject = () => {
     setEditingSubject(null);
     setSubjectForm({ name: "", description: "" });
@@ -616,7 +629,7 @@ export default function QuestionsPageWithSubjects() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...subjectForm,
-          course: selectedCourse,
+          course: "BSGE",
           userId: USER_ID,
         }),
       });
@@ -668,6 +681,7 @@ export default function QuestionsPageWithSubjects() {
     setSearchQuery("");
     setFilterCategory("");
     setFilterDifficulty("");
+    setFilterStatus("all");
   };
 
   const handleBackToSubjects = () => {
@@ -677,7 +691,7 @@ export default function QuestionsPageWithSubjects() {
     setPagination(null);
   };
 
-  // ── Question Handlers ─────────────────────────────────────────────────────────
+  // Question handlers
   const openAddQuestion = () => {
     setEditingQuestion(null);
     setShowQuestionModal(true);
@@ -694,27 +708,51 @@ export default function QuestionsPageWithSubjects() {
   };
 
   const handleDeleteQuestion = async (id: string) => {
-    if (!USER_ID) {
-      alert("Session not loaded. Please refresh.");
-      return;
-    }
+    if (!USER_ID) return;
     if (!confirm("Delete this question? This cannot be undone.")) return;
 
     await fetch(`/api/questions/${id}?userId=${USER_ID}`, { method: "DELETE" });
     fetchQuestions();
-    fetchSubjects(); // Refresh subject counts
+    fetchSubjects();
+  };
+
+  const handleToggleStatus = async (question: Question) => {
+    if (!USER_ID) return;
+
+    try {
+      const res = await fetch(`/api/questions/${question._id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...question,
+          isActive: !question.isActive,
+          userId: USER_ID,
+        }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        setError(data.error || "Failed to update question status");
+        return;
+      }
+
+      fetchQuestions();
+    } catch (err) {
+      setError("Failed to update question status");
+      console.error(err);
+    }
   };
 
   const handleDownloadTemplate = async () => {
     setDownloadingTemplate(true);
     try {
-      const res = await fetch("/api/questions/template");
+      const res = await fetch("/api/questions/template?course=BSGE");
       if (!res.ok) throw new Error("Failed");
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = "questions_import_template.xlsx";
+      a.download = "bsge_questions_template.xlsx";
       a.click();
       URL.revokeObjectURL(url);
     } finally {
@@ -726,15 +764,14 @@ export default function QuestionsPageWithSubjects() {
     const file = e.target.files?.[0];
     if (!file) return;
     e.target.value = "";
-    if (!USER_ID) {
-      alert("Session not loaded. Please refresh.");
-      return;
-    }
+    if (!USER_ID) return;
+    
     setImporting(true);
     try {
       const fd = new FormData();
       fd.append("file", file);
       fd.append("userId", USER_ID);
+      fd.append("course", "BSGE");
       const res = await fetch("/api/questions/import", { method: "POST", body: fd });
       const data = await res.json();
       if (!res.ok) {
@@ -749,7 +786,6 @@ export default function QuestionsPageWithSubjects() {
     }
   };
 
-  // ── Pagination Helpers ────────────────────────────────────────────────────────
   const totalPages = pagination?.totalPages ?? 1;
   const buildPageList = () => {
     if (totalPages <= 5) return Array.from({ length: totalPages }, (_, i) => i + 1);
@@ -758,12 +794,9 @@ export default function QuestionsPageWithSubjects() {
     return [1, "...", currentPage - 1, currentPage, currentPage + 1, "...", totalPages];
   };
 
-  const shortId = (id: string, course: string) =>
-    `${course === "BSABEN" ? "ABE" : "GE"}-${id.slice(-4).toUpperCase()}`;
+  const shortId = (id: string) => `GE-${id.slice(-4).toUpperCase()}`;
 
-  // ══════════════════════════════════════════════════════════════════════════════
   // RENDER
-  // ══════════════════════════════════════════════════════════════════════════════
   return (
     <div className="space-y-6 animate-in fade-in duration-700">
       {/* Modals */}
@@ -777,34 +810,32 @@ export default function QuestionsPageWithSubjects() {
           }}
           userId={USER_ID}
           defaultSubject={selectedSubject?.name}
-          defaultCourse={selectedCourse}
         />
       )}
       {importResult && <ImportResultModal result={importResult} onClose={() => setImportResult(null)} />}
       <input ref={fileInputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleImportFile} />
 
-      {/* ── HEADER ──────────────────────────────────────────────────────────────── */}
-      <div className="space-y-4 xs:space-y-6 sm:space-y-8">
-        {/* PAGE HEADER */}
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 xs:gap-4">
-          <div className="flex items-center gap-2 xs:gap-3 flex-1">
+      {/* HEADER */}
+      <div className="space-y-4">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+          <div className="flex items-center gap-3 flex-1">
             {currentView !== "subjects" && (
               <button 
-                onClick={handleBackToSubjects} 
-                className="p-1.5 xs:p-2 hover:bg-gray-100 rounded-lg xs:rounded-xl transition-all flex-shrink-0"
+                onClick={handleBackToSubjects}
+                className="p-2 hover:bg-gray-100 rounded-xl transition-all flex-shrink-0"
               >
-                <ArrowLeft size={18} className="xs:w-5 xs:h-5" />
+                <ArrowLeft size={20} className="text-slate-800 cursor-pointer" />
               </button>
             )}
             <div>
-              <div className="flex items-center gap-1.5 xs:gap-2 mb-0.5 xs:mb-1">
+              <div className="flex items-center gap-2 mb-1">
                 <GraduationCap className="text-[#7d1a1a]" size={16} />
-                <span className="text-[#7d1a1a] font-bold text-[9px] xs:text-[10px] sm:text-xs uppercase tracking-[0.12em] xs:tracking-[0.15em] sm:tracking-widest">
-                  {currentView === "subjects" ? "Subject Management" : `${pagination?.total || 0} Questions`}
+                <span className="text-[#7d1a1a] font-bold text-[10px] uppercase tracking-widest">
+                  {currentView === "subjects" ? "BSGE Question Bank" : `${pagination?.total || 0} Questions`}
                 </span>
               </div>
-              <h1 className="text-xl xs:text-2xl sm:text-3xl font-black text-gray-900 tracking-tight">
-                {currentView === "subjects" ? "Question Bank" : selectedSubject?.name}
+              <h1 className="text-3xl font-black text-gray-900 tracking-tight">
+                {currentView === "subjects" ? "Subjects" : selectedSubject?.name}
               </h1>
             </div>
           </div>
@@ -813,17 +844,17 @@ export default function QuestionsPageWithSubjects() {
           {currentView === "subjects" ? (
             <button 
               onClick={openAddSubject}
-              className="flex items-center justify-center gap-1.5 xs:gap-2 bg-[#7d1a1a] text-white px-4 xs:px-5 sm:px-6 py-2.5 xs:py-2.5 sm:py-3 rounded-lg xs:rounded-xl font-bold shadow-lg shadow-[#7d1a1a]/20 hover:bg-[#5a1313] transition-all active:scale-95 text-xs xs:text-sm"
+              className="flex items-center gap-2 bg-[#7d1a1a] text-white px-6 py-3 rounded-xl font-bold shadow-lg shadow-[#7d1a1a]/20 hover:bg-[#5a1313] transition-all"
             >
-              <Plus size={16} className="xs:w-[18px] xs:h-[18px] sm:w-5 sm:h-5" />
-              <span className="truncate">Add New Subject</span>
+              <Plus size={18} />
+              Add Subject
             </button>
           ) : (
-            <div className="flex items-center gap-2 xs:gap-2.5 flex-wrap w-full sm:w-auto">
+            <div className="flex items-center gap-2.5">
               <button 
                 onClick={handleDownloadTemplate} 
                 disabled={downloadingTemplate}
-                className="flex items-center justify-center gap-1.5 px-3 xs:px-4 py-2 xs:py-2.5 bg-white border border-gray-200 rounded-lg xs:rounded-xl font-bold text-gray-600 hover:bg-gray-50 text-[10px] xs:text-xs transition-all disabled:opacity-60 active:scale-95"
+                className="flex items-center gap-1.5 px-4 py-2.5 bg-white border border-gray-200 rounded-xl font-bold text-gray-600 hover:bg-gray-50 text-xs transition-all disabled:opacity-60"
               >
                 {downloadingTemplate ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
                 Template
@@ -831,26 +862,25 @@ export default function QuestionsPageWithSubjects() {
               <button 
                 onClick={() => fileInputRef.current?.click()} 
                 disabled={importing}
-                className="flex items-center justify-center gap-1.5 px-3 xs:px-4 py-2 xs:py-2.5 bg-white border border-gray-200 rounded-lg xs:rounded-xl font-bold text-gray-600 hover:bg-gray-50 text-[10px] xs:text-xs transition-all disabled:opacity-60 active:scale-95"
+                className="flex items-center gap-1.5 px-4 py-2.5 bg-white border border-gray-200 rounded-xl font-bold text-gray-600 hover:bg-gray-50 text-xs transition-all disabled:opacity-60"
               >
                 {importing ? <Loader2 size={14} className="animate-spin" /> : <Layers size={14} />}
-                {importing ? "Importing…" : "Bulk Import"}
+                Import
               </button>
               <button 
                 onClick={openAddQuestion}
-                className="flex items-center justify-center gap-1.5 xs:gap-2 bg-[#7d1a1a] text-white px-4 xs:px-5 sm:px-6 py-2.5 xs:py-2.5 sm:py-3 rounded-lg xs:rounded-xl font-bold shadow-lg shadow-[#7d1a1a]/20 hover:bg-[#5a1313] transition-all active:scale-95 text-xs xs:text-sm flex-1 sm:flex-none"
+                className="flex items-center gap-2 bg-[#7d1a1a] text-white px-6 py-3 rounded-xl font-bold shadow-lg shadow-[#7d1a1a]/20 hover:bg-[#5a1313] transition-all"
               >
-                <Plus size={16} className="xs:w-[18px] xs:h-[18px] sm:w-5 sm:h-5" />
-                <span className="truncate">New Question</span>
+                <Plus size={18} />
+                New Question
               </button>
             </div>
           )}
         </div>
 
-        {/* Error Alert */}
         {error && (
           <div className="flex items-center gap-2.5 bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3">
-            <AlertCircle size={16} className="shrink-0" />
+            <AlertCircle size={16} />
             <p className="text-sm font-semibold">{error}</p>
             <button onClick={() => setError("")} className="ml-auto">
               <X size={16} />
@@ -859,75 +889,90 @@ export default function QuestionsPageWithSubjects() {
         )}
       </div>
 
-      {/* ── FILTERS ─────────────────────────────────────────────────────────────── */}
+      {/* FILTERS */}
       <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm">
-        <div className="flex flex-col gap-4">
-          <div className="flex bg-gray-100 p-1 rounded-xl w-full">
-            {(["BSABEN", "BSGE"] as const).map((course) => (
-              <button key={course} onClick={() => setSelectedCourse(course)}
-                className={`flex-1 px-8 py-2.5 rounded-lg text-[11px] font-black transition-all ${
-                  selectedCourse === course ? "bg-white text-[#7d1a1a] shadow-sm" : "text-gray-500"
-                }`}>
-                {course}
-              </button>
-            ))}
+        {currentView === "subjects" ? (
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={14} />
+            <input 
+              type="text" 
+              placeholder="Search subjects..." 
+              value={subjectSearchQuery}
+              onChange={(e) => setSubjectSearchQuery(e.target.value)}
+              className="w-full pl-10 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#7d1a1a]/20" 
+            />
           </div>
-
-          {currentView === "subjects" ? (
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={14} />
-              <input type="text" placeholder="Search subjects..." value={subjectSearchQuery}
-                onChange={(e) => setSubjectSearchQuery(e.target.value)}
-                className="w-full pl-10 pr-4 py-2.5 text-slate-800 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#7d1a1a]/20" />
-            </div>
-          ) : (
-            <>
-              <div className="flex items-center gap-2">
-                <div className="relative flex-1">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={14} />
-                  <input type="text" placeholder="Search questions, category…" value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full pl-10 pr-10 text-slate-800 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#7d1a1a]/20 transition-all" />
-                  {searchQuery && (
-                    <button onClick={() => setSearchQuery("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-1">
-                      <X size={14} />
-                    </button>
-                  )}
-                </div>
-                <button onClick={() => setShowFilters(!showFilters)}
-                  className={`p-2.5 border rounded-xl transition-all ${showFilters ? "bg-[#7d1a1a] text-white border-[#7d1a1a]" : "border-gray-200 text-gray-500 hover:bg-gray-50"}`}>
-                  <Filter size={16} />
-                </button>
+        ) : (
+          <>
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={14} />
+                <input 
+                  type="text" 
+                  placeholder="Search questions..." 
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-10 pr-10 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#7d1a1a]/20" 
+                />
+                {searchQuery && (
+                  <button onClick={() => setSearchQuery("")} className="absolute right-3 top-1/2 -translate-y-1/2">
+                    <X size={14} className="text-gray-400" />
+                  </button>
+                )}
               </div>
+              <button 
+                onClick={() => setShowFilters(!showFilters)}
+                className={`p-2.5 border rounded-xl transition-all ${showFilters ? "bg-[#7d1a1a] text-white border-[#7d1a1a]" : "border-gray-200 text-gray-500 hover:bg-gray-50"}`}
+              >
+                <Filter size={16} />
+              </button>
+            </div>
 
-              {showFilters && (
-                <div className="pt-4 border-t border-gray-100">
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    <input type="text" placeholder="Filter by category…" value={filterCategory}
-                      onChange={(e) => setFilterCategory(e.target.value)}
-                      className="px-3 py-2.5 bg-gray-50 text-slate-800 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#7d1a1a]/20" />
-                    <select value={filterDifficulty} onChange={(e) => setFilterDifficulty(e.target.value)}
-                      className="px-3 py-2.5 bg-gray-50 text-slate-800 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#7d1a1a]/20">
-                      <option value="">All Difficulties</option>
-                      <option>Easy</option>
-                      <option>Medium</option>
-                      <option>Hard</option>
-                    </select>
-                    <button onClick={() => { setFilterCategory(""); setFilterDifficulty(""); }}
-                      className="px-3 py-2.5 bg-gray-900 text-white rounded-xl text-sm font-bold hover:bg-gray-700 transition-all">
-                      Clear Filters
-                    </button>
-                  </div>
+            {showFilters && (
+              <div className="pt-4 border-t border-gray-100 mt-3">
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                  <input 
+                    type="text" 
+                    placeholder="Filter by category…" 
+                    value={filterCategory}
+                    onChange={(e) => setFilterCategory(e.target.value)}
+                    className="px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#7d1a1a]/20" 
+                  />
+                  <select 
+                    value={filterDifficulty} 
+                    onChange={(e) => setFilterDifficulty(e.target.value)}
+                    className="px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#7d1a1a]/20"
+                  >
+                    <option value="">All Difficulties</option>
+                    <option>Easy</option>
+                    <option>Medium</option>
+                    <option>Hard</option>
+                  </select>
+                  <select 
+                    value={filterStatus} 
+                    onChange={(e) => setFilterStatus(e.target.value as "all" | "active" | "inactive")}
+                    className="px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#7d1a1a]/20"
+                  >
+                    <option value="all">All Status</option>
+                    <option value="active">Active Only</option>
+                    <option value="inactive">Inactive Only</option>
+                  </select>
+                  <button 
+                    onClick={() => { setFilterCategory(""); setFilterDifficulty(""); setFilterStatus("all"); }}
+                    className="px-3 py-2.5 bg-gray-900 text-white rounded-xl text-sm font-bold hover:bg-gray-700 transition-all"
+                  >
+                    Clear Filters
+                  </button>
                 </div>
-              )}
-            </>
-          )}
-        </div>
+              </div>
+            )}
+          </>
+        )}
       </div>
 
-      {/* ── CONTENT ─────────────────────────────────────────────────────────────── */}
+      {/* CONTENT */}
       {currentView === "subjects" ? (
-        // ── SUBJECTS VIEW ──────────────────────────────────────────────────────────
+        // SUBJECTS VIEW
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {loadingSubjects ? (
             <div className="col-span-full flex justify-center py-12">
@@ -935,32 +980,33 @@ export default function QuestionsPageWithSubjects() {
             </div>
           ) : subjects.length > 0 ? (
             subjects.map((subject) => (
-              <div key={subject._id}
-                className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 hover:shadow-md transition-all group">
+              <div 
+                key={subject._id}
+                className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 hover:shadow-md transition-all group"
+              >
                 <div className="flex items-start justify-between mb-4">
                   <div className="w-12 h-12 bg-[#7d1a1a]/10 rounded-xl flex items-center justify-center">
                     <BookOpen size={24} className="text-[#7d1a1a]" />
                   </div>
                   <div className="flex items-center gap-1">
-                    <button onClick={() => openEditSubject(subject)}
-                      className="p-2 text-gray-400 hover:text-[#7d1a1a] hover:bg-[#7d1a1a]/5 rounded-lg transition-all">
+                    <button 
+                      onClick={() => openEditSubject(subject)}
+                      className="p-2 text-gray-400 hover:text-[#7d1a1a] hover:bg-[#7d1a1a]/5 rounded-lg transition-all"
+                    >
                       <Edit3 size={16} />
                     </button>
-                    <button onClick={() => handleDeleteSubject(subject)}
-                      className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all">
+                    <button 
+                      onClick={() => handleDeleteSubject(subject)}
+                      className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
+                    >
                       <Trash2 size={16} />
                     </button>
                   </div>
                 </div>
 
-                <h3 className="text-lg font-black text-gray-900 mb-2 line-clamp-2">
-                  {subject.name}
-                </h3>
-
+                <h3 className="text-lg font-black text-gray-900 mb-2 line-clamp-2">{subject.name}</h3>
                 {subject.description && (
-                  <p className="text-sm text-gray-500 mb-4 line-clamp-2">
-                    {subject.description}
-                  </p>
+                  <p className="text-sm text-gray-500 mb-4 line-clamp-2">{subject.description}</p>
                 )}
 
                 <div className="flex items-center justify-between pt-4 border-t border-gray-100">
@@ -970,8 +1016,10 @@ export default function QuestionsPageWithSubjects() {
                       {subject.questionCount} Question{subject.questionCount !== 1 ? "s" : ""}
                     </span>
                   </div>
-                  <button onClick={() => handleViewSubject(subject)}
-                    className="text-xs font-bold text-[#7d1a1a] hover:underline">
+                  <button 
+                    onClick={() => handleViewSubject(subject)}
+                    className="text-xs font-bold text-[#7d1a1a] hover:underline"
+                  >
                     View Questions →
                   </button>
                 </div>
@@ -980,14 +1028,12 @@ export default function QuestionsPageWithSubjects() {
           ) : (
             <div className="col-span-full bg-white rounded-2xl border-2 border-dashed border-gray-100 p-12 flex flex-col items-center justify-center text-center">
               <BookOpen size={48} className="text-gray-300 mb-4" />
-              <p className="font-black uppercase tracking-widest text-sm text-gray-500 mb-1">
-                No Subjects Found
-              </p>
-              <p className="text-xs text-gray-400 mb-4">
-                Create your first subject to get started
-              </p>
-              <button onClick={openAddSubject}
-                className="flex items-center gap-2 px-4 py-2 bg-[#7d1a1a] text-white rounded-xl font-bold text-xs hover:bg-[#5a1313] transition-all">
+              <p className="font-black uppercase tracking-widest text-sm text-gray-500 mb-1">No Subjects Found</p>
+              <p className="text-xs text-gray-400 mb-4">Create your first subject to get started</p>
+              <button 
+                onClick={openAddSubject}
+                className="flex items-center gap-2 px-4 py-2 bg-[#7d1a1a] text-white rounded-xl font-bold text-xs hover:bg-[#5a1313] transition-all"
+              >
                 <Plus size={14} />
                 Add Subject
               </button>
@@ -995,189 +1041,132 @@ export default function QuestionsPageWithSubjects() {
           )}
         </div>
       ) : (
-        // ── QUESTIONS VIEW ─────────────────────────────────────────────────────────
+        // QUESTIONS VIEW
         <>
           {/* Desktop Table */}
           <div className="hidden lg:block bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
-                <thead className="bg-gray-50 border-b border-gray-100">
-                  <tr className="text-[11px] font-black text-gray-400 uppercase tracking-widest">
-                    <th className="px-6 py-5 w-[8%]">ID</th>
-                    <th className="px-6 py-5 w-[40%]">Question</th>
-                    <th className="px-6 py-5 w-[16%]">Category</th>
-                    <th className="px-6 py-5 w-[12%]">Difficulty</th>
-                    <th className="px-6 py-5 w-[24%] text-right">Actions</th>
+            <table className="w-full">
+              <thead className="bg-gray-50 border-b">
+                <tr className="text-[11px] font-black text-gray-400 uppercase tracking-widest">
+                  <th className="px-6 py-5 w-[8%]">ID</th>
+                  <th className="px-6 py-5 w-[32%]">Question</th>
+                  <th className="px-6 py-5 w-[14%]">Category</th>
+                  <th className="px-6 py-5 w-[10%]">Difficulty</th>
+                  <th className="px-6 py-5 w-[10%]">Status</th>
+                  <th className="px-6 py-5 w-[26%] text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {loadingQuestions ? (
+                  <tr>
+                    <td colSpan={6} className="px-6 py-16 text-center">
+                      <Loader2 size={24} className="animate-spin text-[#7d1a1a] mx-auto" />
+                    </td>
                   </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-50">
-                  {loadingQuestions ? (
-                    <tr>
-                      <td colSpan={5} className="px-6 py-16 text-center">
-                        <Loader2 size={24} className="animate-spin text-[#7d1a1a] mx-auto" />
+                ) : questions.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="px-6 py-16 text-center">
+                      <FileSpreadsheet size={32} className="text-gray-300 mx-auto mb-3" />
+                      <p className="text-sm font-bold text-gray-400">No questions found</p>
+                    </td>
+                  </tr>
+                ) : (
+                  questions.map((q) => (
+                    <tr key={q._id} className={`hover:bg-gray-50/80 group ${!q.isActive ? "opacity-50" : ""}`}>
+                      <td className="px-6 py-4">
+                        <span className="text-xs font-black text-[#7d1a1a]">{shortId(q._id)}</span>
+                      </td>
+                      <td className="px-6 py-4">
+                        <p className="text-sm font-semibold text-gray-700 line-clamp-2">{q.questionText}</p>
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className="text-[10px] font-bold text-gray-500 uppercase bg-gray-100 px-2.5 py-1.5 rounded-lg">
+                          {q.category}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-black uppercase ${DIFFICULTY_STYLES[q.difficulty]}`}>
+                          <div className={`w-1.5 h-1.5 rounded-full ${DIFFICULTY_DOT[q.difficulty]}`} />
+                          {q.difficulty}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-black uppercase ${
+                          q.isActive ? "bg-emerald-50 text-emerald-600" : "bg-gray-100 text-gray-500"
+                        }`}>
+                          <div className={`w-1.5 h-1.5 rounded-full ${q.isActive ? "bg-emerald-500" : "bg-gray-400"}`} />
+                          {q.isActive ? "Active" : "Inactive"}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center justify-end gap-1">
+                          <button 
+                            onClick={() => handleToggleStatus(q)}
+                            className={`p-2 rounded-xl transition-all ${
+                              q.isActive 
+                                ? "text-gray-400 hover:text-gray-600 hover:bg-gray-100"
+                                : "text-emerald-400 hover:text-emerald-600 hover:bg-emerald-50"
+                            }`}
+                            title={q.isActive ? "Deactivate" : "Activate"}
+                          >
+                            <Power size={16} />
+                          </button>
+                          <button 
+                            onClick={() => openEditQuestion(q)}
+                            className="p-2 text-gray-400 hover:text-[#7d1a1a] hover:bg-red-50 rounded-xl transition-all"
+                          >
+                            <Edit3 size={16} />
+                          </button>
+                          <button 
+                            onClick={() => handleDeleteQuestion(q._id)}
+                            className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
                       </td>
                     </tr>
-                  ) : questions.length === 0 ? (
-                    <tr>
-                      <td colSpan={5} className="px-6 py-16 text-center">
-                        <FileSpreadsheet size={32} className="text-gray-300 mx-auto mb-3" />
-                        <p className="text-sm font-bold text-gray-400">No questions found</p>
-                        <p className="text-xs text-gray-400 mt-1">Add a question or import from Excel.</p>
-                      </td>
-                    </tr>
-                  ) : (
-                    questions.map((q) => (
-                      <tr key={q._id} className="hover:bg-gray-50/80 group transition-all">
-                        <td className="px-6 py-4">
-                          <span className="text-xs font-black text-[#7d1a1a]">{shortId(q._id, q.course)}</span>
-                        </td>
-                        <td className="px-6 py-4">
-                          <p className="text-sm font-semibold text-gray-700 line-clamp-2 leading-relaxed group-hover:line-clamp-none cursor-default">
-                            {q.questionText}
-                          </p>
-                        </td>
-                        <td className="px-6 py-4">
-                          <span className="text-[10px] font-bold text-gray-500 uppercase bg-gray-100 px-2.5 py-1.5 rounded-lg">
-                            {q.category}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-black uppercase ${DIFFICULTY_STYLES[q.difficulty]}`}>
-                            <div className={`w-1.5 h-1.5 rounded-full ${DIFFICULTY_DOT[q.difficulty]}`} />
-                            {q.difficulty}
-                          </div>
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="flex items-center justify-end gap-1">
-                            <button onClick={() => openEditQuestion(q)}
-                              className="p-2 text-gray-400 hover:text-[#7d1a1a] hover:bg-red-50 rounded-xl transition-all"
-                              aria-label="Edit">
-                              <Edit3 size={16} />
-                            </button>
-                            <button onClick={() => handleDeleteQuestion(q._id)}
-                              className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all"
-                              aria-label="Delete">
-                              <Trash2 size={16} />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
+                  ))
+                )}
+              </tbody>
+            </table>
 
             {pagination && pagination.totalPages > 1 && (
-              <div className="px-6 py-5 border-t border-gray-100 bg-gray-50/50 flex items-center justify-between">
+              <div className="px-6 py-5 border-t bg-gray-50/50 flex items-center justify-between">
                 <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">
                   Showing {(pagination.page - 1) * pagination.limit + 1}–
-                  {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total.toLocaleString()}
+                  {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total}
                 </p>
                 <div className="flex items-center gap-1.5">
-                  <button onClick={() => setCurrentPage((p) => Math.max(1, p - 1))} disabled={currentPage === 1}
-                    className="p-2 text-gray-400 disabled:opacity-20 hover:text-gray-900 transition-all">
+                  <button 
+                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))} 
+                    disabled={currentPage === 1}
+                    className="p-2 text-gray-400 disabled:opacity-20"
+                  >
                     <ChevronLeft size={20} />
                   </button>
                   {buildPageList().map((p, i) => (
-                    <button key={i} onClick={() => typeof p === "number" && setCurrentPage(p)}
+                    <button 
+                      key={i} 
+                      onClick={() => typeof p === "number" && setCurrentPage(p)}
                       disabled={typeof p !== "number"}
-                      className={`min-w-[36px] h-9 px-2 rounded-xl text-xs font-black border transition-all ${
+                      className={`min-w-[36px] h-9 px-2 rounded-xl text-xs font-black border ${
                         p === currentPage
                           ? "bg-[#7d1a1a] text-white border-[#7d1a1a]"
                           : typeof p === "number"
-                          ? "bg-white border-gray-200 text-gray-500 hover:border-[#7d1a1a] hover:text-[#7d1a1a]"
-                          : "bg-transparent border-transparent text-gray-400 cursor-default"
-                      }`}>
+                          ? "bg-white border-gray-200 text-gray-500"
+                          : "bg-transparent border-transparent text-gray-400"
+                      }`}
+                    >
                       {p}
                     </button>
                   ))}
-                  <button onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                  <button 
+                    onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
                     disabled={currentPage === totalPages}
-                    className="p-2 text-gray-400 disabled:opacity-20 hover:text-gray-900 transition-all">
+                    className="p-2 text-gray-400 disabled:opacity-20"
+                  >
                     <ChevronRight size={20} />
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Mobile Cards */}
-          <div className="lg:hidden space-y-3">
-            {loadingQuestions ? (
-              <div className="flex justify-center py-12">
-                <Loader2 size={28} className="animate-spin text-[#7d1a1a]" />
-              </div>
-            ) : questions.length === 0 ? (
-              <div className="bg-white rounded-xl border border-gray-200 p-8 text-center">
-                <FileSpreadsheet size={28} className="text-gray-300 mx-auto mb-2" />
-                <p className="text-sm font-bold text-gray-400">No questions found</p>
-              </div>
-            ) : (
-              questions.map((q) => (
-                <div key={q._id}
-                  className="bg-white rounded-2xl border border-gray-200 shadow-sm p-4 hover:shadow-md transition-all">
-                  <div className="flex-1 min-w-0 mb-3">
-                    <div className="flex items-center gap-2 mb-2 flex-wrap">
-                      <span className="text-xs font-black text-[#7d1a1a]">{shortId(q._id, q.course)}</span>
-                      <span className="text-[10px] font-bold text-gray-500 uppercase bg-gray-100 px-2 py-1 rounded">
-                        {q.category}
-                      </span>
-                    </div>
-                    <p className="text-sm font-semibold text-gray-700 leading-relaxed line-clamp-3">
-                      {q.questionText}
-                    </p>
-                  </div>
-                  <div className="flex items-center justify-between pt-3 border-t border-gray-100">
-                    <div className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-black uppercase ${DIFFICULTY_STYLES[q.difficulty]}`}>
-                      <div className={`w-1.5 h-1.5 rounded-full ${DIFFICULTY_DOT[q.difficulty]}`} />
-                      {q.difficulty}
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <button onClick={() => openEditQuestion(q)}
-                        className="p-2 text-gray-400 hover:text-[#7d1a1a] hover:bg-red-50 rounded-xl transition-all active:scale-95">
-                        <Edit3 size={14} />
-                      </button>
-                      <button onClick={() => handleDeleteQuestion(q._id)}
-                        className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all active:scale-95">
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ))
-            )}
-
-            {pagination && pagination.totalPages > 1 && (
-              <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-4">
-                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest text-center mb-3">
-                  Showing {(pagination.page - 1) * pagination.limit + 1}–
-                  {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total.toLocaleString()}
-                </p>
-                <div className="flex items-center justify-center gap-2">
-                  <button onClick={() => setCurrentPage((p) => Math.max(1, p - 1))} disabled={currentPage === 1}
-                    className="p-2 text-gray-400 disabled:opacity-20 transition-all">
-                    <ChevronLeft size={18} />
-                  </button>
-                  <div className="flex items-center gap-1 overflow-x-auto">
-                    {buildPageList().map((p, i) => (
-                      <button key={i} onClick={() => typeof p === "number" && setCurrentPage(p)}
-                        disabled={typeof p !== "number"}
-                        className={`min-w-[36px] h-9 px-2 rounded-xl text-xs font-black border transition-all ${
-                          p === currentPage
-                            ? "bg-[#7d1a1a] text-white border-[#7d1a1a]"
-                            : typeof p === "number"
-                            ? "bg-white border-gray-200 text-gray-500 active:scale-95"
-                            : "bg-transparent border-transparent text-gray-400 cursor-default"
-                        }`}>
-                        {p}
-                      </button>
-                    ))}
-                  </div>
-                  <button onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                    disabled={currentPage === totalPages}
-                    className="p-2 text-gray-400 disabled:opacity-20 transition-all">
-                    <ChevronRight size={18} />
                   </button>
                 </div>
               </div>
@@ -1186,10 +1175,9 @@ export default function QuestionsPageWithSubjects() {
         </>
       )}
 
-      {/* ── SUBJECT MODAL ───────────────────────────────────────────────────────── */}
+      {/* Subject Modal */}
       {showSubjectModal && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
-          onClick={() => setShowSubjectModal(false)}>
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setShowSubjectModal(false)}>
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100">
               <h2 className="font-black text-gray-900 text-base">
@@ -1203,28 +1191,39 @@ export default function QuestionsPageWithSubjects() {
             <div className="p-6 space-y-4">
               <div>
                 <label className="block text-xs font-bold text-gray-700 mb-2">Subject Name *</label>
-                <input type="text" value={subjectForm.name}
+                <input 
+                  type="text" 
+                  value={subjectForm.name}
                   onChange={(e) => setSubjectForm({ ...subjectForm, name: e.target.value })}
-                  placeholder="e.g., Hydraulics, Surveying"
-                  className="w-full px-4 py-2.5 border text-slate-800 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#7d1a1a]/20 text-sm" />
+                  placeholder="e.g., Surveying, Geodesy, Professional Practice"
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#7d1a1a]/20 text-sm" 
+                />
               </div>
 
               <div>
                 <label className="block text-xs font-bold text-gray-700 mb-2">Description (Optional)</label>
-                <textarea value={subjectForm.description}
+                <textarea 
+                  value={subjectForm.description}
                   onChange={(e) => setSubjectForm({ ...subjectForm, description: e.target.value })}
-                  placeholder="Brief description of this subject..." rows={3}
-                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#7d1a1a]/20 text-sm resize-none" />
+                  placeholder="Brief description of this subject..." 
+                  rows={3}
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#7d1a1a]/20 text-sm resize-none" 
+                />
               </div>
             </div>
 
             <div className="px-6 py-4 border-t border-gray-100 flex justify-end gap-3">
-              <button onClick={() => setShowSubjectModal(false)}
-                className="px-5 py-2.5 rounded-xl text-sm font-bold text-gray-600 hover:bg-gray-100 transition-all">
+              <button 
+                onClick={() => setShowSubjectModal(false)}
+                className="px-5 py-2.5 rounded-xl text-sm font-bold text-gray-600 hover:bg-gray-100 transition-all"
+              >
                 Cancel
               </button>
-              <button onClick={handleSaveSubject} disabled={savingSubject}
-                className="flex items-center gap-2 px-6 py-2.5 bg-[#7d1a1a] text-white rounded-xl text-sm font-bold hover:bg-[#5a1313] transition-all disabled:opacity-60">
+              <button 
+                onClick={handleSaveSubject} 
+                disabled={savingSubject}
+                className="flex items-center gap-2 px-6 py-2.5 bg-[#7d1a1a] text-white rounded-xl text-sm font-bold hover:bg-[#5a1313] transition-all disabled:opacity-60"
+              >
                 {savingSubject ? <Loader2 size={15} className="animate-spin" /> : <Plus size={15} />}
                 {savingSubject ? "Saving..." : editingSubject ? "Save Changes" : "Add Subject"}
               </button>

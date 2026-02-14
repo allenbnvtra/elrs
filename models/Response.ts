@@ -4,7 +4,7 @@ export interface Response {
   _id?: ObjectId;
   studentId: string;
   questionId: ObjectId;
-  course: "BSABE" | "BSGE";
+  course: "BSABEN" | "BSGE";
   selectedAnswer: "A" | "B" | "C" | "D";
   isCorrect: boolean;
   submittedAt: Date;

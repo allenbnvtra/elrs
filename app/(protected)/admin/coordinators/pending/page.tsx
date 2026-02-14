@@ -13,7 +13,7 @@ interface Coordinator {
   _id: string;
   name: string;
   email: string;
-  course: "BSABE" | "BSGE";
+  course: "BSABEN" | "BSGE";
   department: string;
   status: "pending" | "approved" | "rejected";
   createdAt: string;
@@ -21,7 +21,7 @@ interface Coordinator {
 
 export default function PendingCoordinatorsPage() {
   const { user } = useAuth();
-  const [selectedCourse, setSelectedCourse] = useState<"BSABE" | "BSGE" | "all">("all");
+  const [selectedCourse, setSelectedCourse] = useState<"BSABEN" | "BSGE" | "all">("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [coordinators, setCoordinators] = useState<Coordinator[]>([]);
   const [loading, setLoading] = useState(false);
@@ -212,7 +212,7 @@ export default function PendingCoordinatorsPage() {
         <div className="flex bg-gray-100 p-0.5 xs:p-1 rounded-lg xs:rounded-xl w-full">
           {[
             { value: "all", label: "All" },
-            { value: "BSABE", label: "BSABE" },
+            { value: "BSABEN", label: "BSABEN" },
             { value: "BSGE", label: "BSGE" },
           ].map((option) => (
             <button

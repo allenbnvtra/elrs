@@ -21,7 +21,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 type UserType = "student" | "faculty" | "admin";
-type CourseType = "BSGE" | "BSABE";
+type CourseType = "BSGE" | "BSABEN";
 
 const SignUpPage: React.FC = () => {
   const router = useRouter();
@@ -236,7 +236,7 @@ const SignUpPage: React.FC = () => {
                   >
                     <option value="">Select Course</option>
                     <option value="BSGE">BS in Geodetic Engineering (BSGE)</option>
-                    <option value="BSABE">BS in Agricultural & Biosystems Engineering (BSABE)</option>
+                    <option value="BSABEN">BS in Agricultural & Biosystems Engineering (BSABEN)</option>
                   </select>
                 </div>
               </div>

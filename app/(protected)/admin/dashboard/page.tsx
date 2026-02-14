@@ -1,27 +1,38 @@
 "use client";
 
 import React from "react";
-import { Users, FileCheck, Award, AlertCircle, ArrowUpRight, PlayCircle } from "lucide-react";
+import { Users, FileCheck, Award, AlertCircle, ArrowUpRight, PlayCircle, LayoutDashboard, Download, Plus } from "lucide-react";
 
 export default function AdminDashboard() {
   return (
     <div className="space-y-6 xs:space-y-8 sm:space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-700">
       {/* WELCOME SECTION */}
-      <div className="flex flex-col gap-4 xs:gap-5 sm:gap-6">
-        <div>
-          <h1 className="text-xl xs:text-2xl sm:text-3xl font-black text-gray-900 tracking-tight">
-            System Overview
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 xs:gap-4">
+        <div className="min-w-0 flex-shrink">
+          <div className="flex items-center gap-2 mb-1">
+            <LayoutDashboard className="text-[#7d1a1a] flex-shrink-0" size={16} />
+            <span className="text-[#7d1a1a] font-bold text-[10px] sm:text-xs uppercase tracking-widest">
+              System Overview
+            </span>
+          </div>
+          <h1 className="text-xl sm:text-2xl lg:text-3xl font-black text-gray-900 tracking-tight">
+            Dashboard
           </h1>
-          <p className="text-xs xs:text-sm text-gray-500 font-medium mt-1 xs:mt-1.5">
-            Hello Admin, here is the current status of the BSAU Licensure system.
+          <p className="text-xs sm:text-sm text-gray-500 mt-1">
+            Welcome back, Admin. Here's your system status at a glance.
           </p>
         </div>
-        <div className="flex flex-col xs:flex-row gap-2 xs:gap-3">
-          <button className="w-full xs:w-auto px-4 xs:px-5 py-2 xs:py-2.5 bg-white border border-gray-200 text-gray-700 font-bold rounded-lg xs:rounded-xl hover:bg-gray-50 transition-all text-xs xs:text-sm shadow-sm">
-            Export Logs
+
+        <div className="flex items-center gap-2 sm:gap-3 w-full sm:w-auto">
+          <button className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-3 sm:px-4 py-2 sm:py-2.5 bg-white border border-gray-200 text-gray-700 font-bold rounded-lg sm:rounded-xl hover:bg-gray-50 transition-all text-xs sm:text-sm shadow-sm">
+            <Download size={16} className="flex-shrink-0" />
+            <span className="hidden sm:inline">Export Logs</span>
+            <span className="sm:hidden">Export</span>
           </button>
-          <button className="w-full xs:w-auto px-4 xs:px-5 py-2 xs:py-2.5 bg-[#7d1a1a] text-white font-bold rounded-lg xs:rounded-xl hover:bg-[#5a1313] transition-all text-xs xs:text-sm shadow-lg shadow-[#7d1a1a]/20">
-            Create New Exam
+          <button className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-3 sm:px-5 py-2 sm:py-2.5 bg-[#7d1a1a] text-white font-bold rounded-lg sm:rounded-xl hover:bg-[#5a1313] transition-all active:scale-95 text-xs sm:text-sm shadow-lg shadow-[#7d1a1a]/20">
+            <Plus size={16} className="flex-shrink-0" />
+            <span className="hidden sm:inline">Create New Exam</span>
+            <span className="sm:hidden">New Exam</span>
           </button>
         </div>
       </div>

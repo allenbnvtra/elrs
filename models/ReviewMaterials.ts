@@ -10,6 +10,7 @@ export interface ReviewMaterial {
   description?: string;
   type: MaterialType;
   course: CourseType;
+  area: string;
   subject: string;
   
   // For documents (PDF)

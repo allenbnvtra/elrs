@@ -13,7 +13,7 @@ interface Coordinator {
   _id: string;
   name: string;
   email: string;
-  course: "BSABE" | "BSGE";
+  course: "BSABEN" | "BSGE";
   department: string;
   contributions: number;
   lastActive?: string;
@@ -33,7 +33,7 @@ interface Stats {
 
 export default function CoordinatorStatusPage() {
   const { user } = useAuth();
-  const [selectedCourse, setSelectedCourse] = useState<"BSABE" | "BSGE" | "all">("all");
+  const [selectedCourse, setSelectedCourse] = useState<"BSABEN" | "BSGE" | "all">("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [coordinators, setCoordinators] = useState<Coordinator[]>([]);
   const [stats, setStats] = useState<Stats>({
@@ -234,7 +234,7 @@ export default function CoordinatorStatusPage() {
         <div className="flex bg-gray-100 p-0.5 xs:p-1 rounded-lg xs:rounded-xl w-full overflow-x-auto no-scrollbar">
           {[
             { value: "all", label: "All Departments" },
-            { value: "BSABE", label: "BSABE Department" },
+            { value: "BSABEN", label: "BSABEN Department" },
             { value: "BSGE", label: "BSGE Department" },
           ].map((option) => (
             <button

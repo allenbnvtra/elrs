@@ -13,7 +13,7 @@ interface Student {
   _id: string;
   name: string;
   email: string;
-  course: "BSABE" | "BSGE";
+  course: "BSABEN" | "BSGE";
   studentNumber: string;
   status: "pending" | "approved" | "rejected";
   createdAt: string;
@@ -24,7 +24,7 @@ interface Student {
 
 export default function StudentApprovalPage() {
   const { user } = useAuth();
-  const [selectedCourse, setSelectedCourse] = useState<"BSABE" | "BSGE">("BSABE");
+  const [selectedCourse, setSelectedCourse] = useState<"BSABEN" | "BSGE">("BSABEN");
   const [searchQuery, setSearchQuery] = useState("");
   const [students, setStudents] = useState<Student[]>([]);
   const [loading, setLoading] = useState(false);
@@ -212,10 +212,10 @@ export default function StudentApprovalPage() {
         {/* Course tabs - only show for admin */}
         {user?.role === "admin" && (
           <div className="flex bg-gray-100 p-0.5 xs:p-1 rounded-lg xs:rounded-xl w-full">
-            {["BSABE", "BSGE"].map((course) => (
+            {["BSABEN", "BSGE"].map((course) => (
               <button
                 key={course}
-                onClick={() => setSelectedCourse(course as "BSABE" | "BSGE")}
+                onClick={() => setSelectedCourse(course as "BSABEN" | "BSGE")}
                 className={`flex-1 px-4 xs:px-6 sm:px-8 py-2 xs:py-2.5 rounded-md xs:rounded-lg text-[9px] xs:text-[10px] sm:text-[11px] font-black uppercase tracking-wider transition-all ${
                   selectedCourse === course 
                   ? "bg-white text-[#7d1a1a] shadow-sm" 

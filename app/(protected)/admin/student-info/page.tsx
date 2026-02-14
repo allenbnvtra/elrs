@@ -14,14 +14,14 @@ interface Student {
   name: string;
   email: string;
   studentNumber: string;
-  course: "BSABE" | "BSGE";
+  course: "BSABEN" | "BSGE";
   status: "pending" | "approved" | "rejected";
   createdAt: string;
 }
 
 interface Stats {
   totalStudents: number;
-  bsabeCount: number;
+  bsabenCount: number;
   bsgeCount: number;
 }
 
@@ -34,12 +34,12 @@ interface Pagination {
 
 export default function StudentInfoPage() {
   const { user } = useAuth();
-  const [selectedCourse, setSelectedCourse] = useState<"BSABE" | "BSGE" | "all">("all");
+  const [selectedCourse, setSelectedCourse] = useState<"BSABEN" | "BSGE" | "all">("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [students, setStudents] = useState<Student[]>([]);
   const [stats, setStats] = useState<Stats>({
     totalStudents: 0,
-    bsabeCount: 0,
+    bsabenCount: 0,
     bsgeCount: 0,
   });
   const [pagination, setPagination] = useState<Pagination>({
@@ -193,7 +193,7 @@ export default function StudentInfoPage() {
             BSABE Track
           </p>
           <p className="text-base xs:text-lg sm:text-xl font-black text-[#7d1a1a] truncate">
-            {stats.bsabeCount.toLocaleString()}
+            {stats.bsabenCount.toLocaleString()}
           </p>
         </div>
         <div className="bg-white p-3 xs:p-4 rounded-xl xs:rounded-2xl border border-gray-200/60 shadow-sm">
@@ -219,7 +219,7 @@ export default function StudentInfoPage() {
         <div className="flex bg-gray-100 p-0.5 xs:p-1 rounded-lg xs:rounded-xl w-full">
           {[
             { value: "all", label: "All Courses" },
-            { value: "BSABE", label: "BSABE" },
+            { value: "BSABEN", label: "BSABEN" },
             { value: "BSGE", label: "BSGE" },
           ].map((option) => (
             <button

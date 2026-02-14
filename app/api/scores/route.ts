@@ -12,7 +12,7 @@ export async function GET(request: NextRequest) {
     const skip = (page - 1) * limit;
 
     // Filters
-    const course = searchParams.get("course") || "BSABE";
+    const course = searchParams.get("course") || "BSABEN";
     const status = searchParams.get("status"); // "excellent" | "good" | "needs-improvement" | null
     const searchQuery = searchParams.get("search") || "";
 

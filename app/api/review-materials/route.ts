@@ -7,6 +7,8 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const course = searchParams.get("course");
     const type = searchParams.get("type");
+    const area = searchParams.get("area");
+    const subject = searchParams.get("subject");
 
     // Connect to database
     const client = await clientPromise;
@@ -17,11 +19,13 @@ export async function GET(request: NextRequest) {
     const query: any = {};
     if (course) query.course = course;
     if (type && type !== "all") query.type = type;
+    if (area && area !== "all") query.area = area;
+    if (subject && subject !== "all") query.subject = subject;
 
     // Fetch materials
     const materials = await materialsCollection
       .find(query)
-      .sort({ createdAt: -1 })
+      .sort({ area: 1, subject: 1, createdAt: -1 })
       .toArray();
 
     return NextResponse.json({

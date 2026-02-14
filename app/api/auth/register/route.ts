@@ -46,9 +46,9 @@ export async function POST(request: NextRequest) {
     }
 
     // Validate course - Updated to match new model
-    if ((userType === "student" || userType === "faculty") && course !== "BSGE" && course !== "BSABE") {
+    if ((userType === "student" || userType === "faculty") && course !== "BSGE" && course !== "BSABEN") {
       return NextResponse.json(
-        { error: "Invalid course. Must be BSGE or BSABE" },
+        { error: "Invalid course. Must be BSGE or BSABEN" },
         { status: 400 }
       );
     }

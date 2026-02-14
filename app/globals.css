@@ -29,6 +29,7 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   background: var(--color-foreground);
+  overflow-x: hidden;
 }
 
 code,
@@ -46,4 +47,8 @@ pre {
 .no-scrollbar {
   -ms-overflow-style: none;  /* IE and Edge */
   scrollbar-width: none;  /* Firefox */
+}
+
+input, textarea, select, option {
+  color: #121212;
 }

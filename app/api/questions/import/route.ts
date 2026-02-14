@@ -5,7 +5,7 @@ import clientPromise, { dbName } from "@/lib/mongodb";
 import { Question, ImportRow, ImportResult, CourseType, DifficultyType, CorrectAnswer } from "@/models/Questions";
 import { User } from "@/models/User";
 
-const VALID_COURSES: CourseType[] = ["BSABE", "BSGE"];
+const VALID_COURSES: CourseType[] = ["BSABEN", "BSGE"];
 const VALID_DIFFICULTIES: DifficultyType[] = ["Easy", "Medium", "Hard"];
 const VALID_ANSWERS: CorrectAnswer[] = ["A", "B", "C", "D"];
 const MAX_ROWS = 500;
@@ -14,12 +14,17 @@ function normalizeText(text: string): string {
   return text.trim().toLowerCase().replace(/\s+/g, " ");
 }
 
-// Create a unique key for duplicate detection: course + subject + questionText
-function createDuplicateKey(course: string, subject: string, questionText: string): string {
+// Create a unique key for duplicate detection
+// For BSABEN: course + area + subject + questionText
+// For BSGE: course + subject + questionText
+function createDuplicateKey(course: string, area: string | undefined, subject: string, questionText: string): string {
+  if (course === "BSABEN") {
+    return `${course.toUpperCase()}::${normalizeText(area || "")}::${normalizeText(subject)}::${normalizeText(questionText)}`;
+  }
   return `${course.toUpperCase()}::${normalizeText(subject)}::${normalizeText(questionText)}`;
 }
 
-function validateRow(row: ImportRow, rowNum: number): string | null {
+function validateRow(row: ImportRow, rowNum: number, course: CourseType): string | null {
   if (!row.question_text?.trim()) return `Row ${rowNum}: question_text is required`;
   if (!row.option_a?.trim()) return `Row ${rowNum}: option_a is required`;
   if (!row.option_b?.trim()) return `Row ${rowNum}: option_b is required`;
@@ -34,13 +39,13 @@ function validateRow(row: ImportRow, rowNum: number): string | null {
     return `Row ${rowNum}: difficulty must be Easy, Medium, or Hard`;
   }
 
-  const course = row.course?.trim() as CourseType;
-  if (!VALID_COURSES.includes(course)) {
-    return `Row ${rowNum}: course must be BSABE or BSGE`;
-  }
-
   if (!row.category?.trim()) return `Row ${rowNum}: category is required`;
   if (!row.subject?.trim()) return `Row ${rowNum}: subject is required`;
+
+  // BSABEN requires area
+  if (course === "BSABEN" && !row.area?.trim()) {
+    return `Row ${rowNum}: area is required for BSABEN questions`;
+  }
 
   // If answer is C or D, the corresponding option must exist
   if (answer === "C" && !row.option_c?.trim()) {
@@ -58,16 +63,18 @@ export async function POST(request: NextRequest) {
     const formData = await request.formData();
     const file = formData.get("file") as File | null;
     const userId = formData.get("userId") as string;
+    const course = formData.get("course") as CourseType;
 
     if (!file) return NextResponse.json({ error: "No file uploaded" }, { status: 400 });
     if (!userId) return NextResponse.json({ error: "userId is required" }, { status: 400 });
+    if (!course) return NextResponse.json({ error: "course is required" }, { status: 400 });
 
-    // Validate userId is a proper MongoDB ObjectId before use
+    if (!VALID_COURSES.includes(course)) {
+      return NextResponse.json({ error: "Invalid course. Must be BSABEN or BSGE." }, { status: 400 });
+    }
+
     if (!ObjectId.isValid(userId)) {
-      return NextResponse.json(
-        { error: "Invalid userId — must be a valid MongoDB ObjectId." },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Invalid userId" }, { status: 400 });
     }
 
     const ext = file.name.split(".").pop()?.toLowerCase();
@@ -116,18 +123,18 @@ export async function POST(request: NextRequest) {
       duplicatesInDb: [],
     };
 
-    // Track seen questions in this file (by course + subject + text)
+    // Track seen questions in this file
     const seenInFile = new Map<string, number>();
 
-    // Pre-load all existing questions from DB with course, subject, and questionText
+    // Pre-load all existing questions from DB for this course
     const existingQuestions = await questionsCol
-      .find({}, { projection: { course: 1, subject: 1, questionText: 1 } })
+      .find({ course }, { projection: { course: 1, area: 1, subject: 1, questionText: 1 } })
       .toArray();
 
     // Build a Set of unique keys for fast duplicate lookup
     const existingKeys = new Set<string>(
       existingQuestions.map((q) =>
-        createDuplicateKey(q.course, q.subject, q.questionText)
+        createDuplicateKey(q.course, q.area, q.subject, q.questionText)
       )
     );
 
@@ -140,39 +147,39 @@ export async function POST(request: NextRequest) {
       const rawText = String(row.question_text ?? "").trim();
 
       // Validation
-      const validationError = validateRow(row, rowNum);
+      const validationError = validateRow(row, rowNum, course);
       if (validationError) {
         result.errors.push({ row: rowNum, reason: validationError, text: rawText });
         result.skipped++;
         continue;
       }
 
-      const course = String(row.course).trim() as CourseType;
+      const area = course === "BSABEN" ? String(row.area).trim() : undefined;
       const subject = String(row.subject).trim();
-      const duplicateKey = createDuplicateKey(course, subject, rawText);
+      const duplicateKey = createDuplicateKey(course, area, subject, rawText);
 
       // Duplicate within file
       if (seenInFile.has(duplicateKey)) {
-        result.duplicatesInFile.push({
-          row: rowNum,
-          text: `[${course}/${subject}] ${rawText.substring(0, 80)}`,
-        });
+        const displayText = course === "BSABEN" 
+          ? `[${area}/${subject}] ${rawText.substring(0, 80)}`
+          : `[${subject}] ${rawText.substring(0, 80)}`;
+        result.duplicatesInFile.push({ row: rowNum, text: displayText });
         result.skipped++;
         continue;
       }
 
       // Duplicate in database
       if (existingKeys.has(duplicateKey)) {
-        result.duplicatesInDb.push({
-          row: rowNum,
-          text: `[${course}/${subject}] ${rawText.substring(0, 80)}`,
-        });
+        const displayText = course === "BSABEN" 
+          ? `[${area}/${subject}] ${rawText.substring(0, 80)}`
+          : `[${subject}] ${rawText.substring(0, 80)}`;
+        result.duplicatesInDb.push({ row: rowNum, text: displayText });
         result.skipped++;
         continue;
       }
 
       seenInFile.set(duplicateKey, rowNum);
-      existingKeys.add(duplicateKey); // prevent later rows from matching what we're about to insert
+      existingKeys.add(duplicateKey);
 
       toInsert.push({
         questionText: rawText,
@@ -184,6 +191,8 @@ export async function POST(request: NextRequest) {
         difficulty: row.difficulty.trim() as DifficultyType,
         category: String(row.category).trim(),
         course: course,
+        area: area,  // NEW: Only set for BSABEN
+        isActive: row.isActive,
         subject: subject,
         explanation: row.explanation ? String(row.explanation).trim() : undefined,
         createdBy: new ObjectId(userId),

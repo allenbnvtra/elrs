@@ -9,9 +9,11 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const course = searchParams.get("course") as CourseType | null;
+    const area = searchParams.get("area");
     const subject = searchParams.get("subject");
     const category = searchParams.get("category");
     const difficulty = searchParams.get("difficulty") as DifficultyType | null;
+    const isActiveParam = searchParams.get("isActive");
     const search = searchParams.get("search");
     const page = Math.max(1, parseInt(searchParams.get("page") ?? "1", 10));
     const limit = Math.min(100, Math.max(1, parseInt(searchParams.get("limit") ?? "12", 10)));
@@ -23,9 +25,16 @@ export async function GET(request: NextRequest) {
     // Build filter
     const filter: Record<string, unknown> = {};
     if (course) filter.course = course;
+    if (area) filter.area = area;
     if (subject) filter.subject = subject;
     if (category) filter.category = category;
     if (difficulty) filter.difficulty = difficulty;
+    
+    // NEW: Filter by active/inactive status
+    if (isActiveParam !== null) {
+      filter.isActive = isActiveParam === "true";
+    }
+    
     if (search) {
       filter.$or = [
         { questionText: { $regex: search, $options: "i" } },
@@ -73,8 +82,10 @@ export async function POST(request: NextRequest) {
       difficulty,
       category,
       course,
+      area,
       subject,
       explanation,
+      isActive = true, // NEW: Default to active
       userId,
     } = body;
 
@@ -83,16 +94,26 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
 
-    if (!ObjectId.isValid(userId)) {
-      return NextResponse.json({ error: "Invalid userId — must be a valid MongoDB ObjectId." }, { status: 400 });
+    // BSABEN requires area
+    if (course === "BSABEN" && !area) {
+      return NextResponse.json({ error: "Area is required for BSABEN questions" }, { status: 400 });
     }
 
-    const validCourses: CourseType[] = ["BSABE", "BSGE"];
+    // BSGE should not have area
+    if (course === "BSGE" && area) {
+      return NextResponse.json({ error: "BSGE questions should not have an area" }, { status: 400 });
+    }
+
+    if (!ObjectId.isValid(userId)) {
+      return NextResponse.json({ error: "Invalid userId" }, { status: 400 });
+    }
+
+    const validCourses: CourseType[] = ["BSABEN", "BSGE"];
     const validDifficulties: DifficultyType[] = ["Easy", "Medium", "Hard"];
     const validAnswers: CorrectAnswer[] = ["A", "B", "C", "D"];
 
     if (!validCourses.includes(course)) {
-      return NextResponse.json({ error: "Invalid course. Must be BSABE or BSGE." }, { status: 400 });
+      return NextResponse.json({ error: "Invalid course. Must be BSABEN or BSGE." }, { status: 400 });
     }
     if (!validDifficulties.includes(difficulty)) {
       return NextResponse.json({ error: "Invalid difficulty." }, { status: 400 });
@@ -113,12 +134,23 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
     }
 
-    // Check for duplicate question text (case-insensitive)
-    const existing = await questionsCol.findOne({
+    // Check for duplicate question text (case-insensitive) within same course
+    const duplicateFilter: any = {
+      course,
       questionText: { $regex: `^${questionText.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, $options: "i" },
-    });
+    };
+    
+    // For BSABEN, also check area and subject to allow same question text in different areas/subjects
+    if (course === "BSABEN") {
+      duplicateFilter.area = area;
+      duplicateFilter.subject = subject;
+    } else {
+      duplicateFilter.subject = subject;
+    }
+
+    const existing = await questionsCol.findOne(duplicateFilter);
     if (existing) {
-      return NextResponse.json({ error: "A question with this text already exists." }, { status: 409 });
+      return NextResponse.json({ error: "A question with this text already exists in this area/subject." }, { status: 409 });
     }
 
     const now = new Date();
@@ -132,8 +164,10 @@ export async function POST(request: NextRequest) {
       difficulty,
       category,
       course,
+      area: course === "BSABEN" ? area : undefined,
       subject,
       explanation: explanation || undefined,
+      isActive: typeof isActive === 'boolean' ? isActive : true, // NEW: Handle isActive field
       createdBy: new ObjectId(userId),
       createdByName: user.name,
       createdAt: now,

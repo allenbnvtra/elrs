@@ -19,6 +19,7 @@ import {
   X,
   ChevronDown,
   User,
+  GraduationCap,
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
@@ -28,6 +29,7 @@ import { useAuth } from "@/contexts/authContext";
 /**
  * Modern Protected Layout - Fully Responsive (Down to 320px)
  * Features: Fixed Maroon Sidebar, Glassmorphism Header, Mobile-First Design
+ * With Expandable Questions Sub-Menu
  */
 export default function AdminLayout({
   children,
@@ -40,6 +42,7 @@ export default function AdminLayout({
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+  const [expandedMenus, setExpandedMenus] = useState<string[]>([]);
 
   // Redirect to login if not authenticated
   useEffect(() => {
@@ -48,6 +51,15 @@ export default function AdminLayout({
     }
   }, [isLoading, isAuthenticated, router]);
 
+  // Auto-expand Questions menu if on BSABE or BSGE questions page
+  useEffect(() => {
+    if (pathname?.includes("/questions/bsaben") || pathname?.includes("questions/bsge")) {
+      if (!expandedMenus.includes("questions")) {
+        setExpandedMenus((prev) => [...prev, "questions"]);
+      }
+    }
+  }, [pathname]);
+
   // Get user initials
   const getUserInitials = (name: string) => {
     const names = name.split(" ");
@@ -55,6 +67,15 @@ export default function AdminLayout({
       return `${names[0][0]}${names[1][0]}`.toUpperCase();
     }
     return name.substring(0, 2).toUpperCase();
+  };
+
+  // Toggle menu expansion
+  const toggleMenu = (menuId: string) => {
+    setExpandedMenus((prev) =>
+      prev.includes(menuId)
+        ? prev.filter((id) => id !== menuId)
+        : [...prev, menuId]
+    );
   };
 
   // Theme Constants
@@ -74,7 +95,17 @@ export default function AdminLayout({
           icon: BookOpen,
           href: "/admin/review-materials",
         },
-        { label: "Questions", icon: HelpCircle, href: "/admin/questions" },
+        { 
+          label: "Questions", 
+          icon: HelpCircle, 
+          href: "/admin/questions",
+          id: "questions",
+          expandable: true,
+          subItems: [
+            { label: "BSABEN", icon: GraduationCap, href: "/admin/questions/bsaben" },
+            { label: "BSGE", icon: GraduationCap, href: "/admin/questions/bsge" },
+          ]
+        },
       ],
     },
     {
@@ -160,7 +191,7 @@ export default function AdminLayout({
   }
 
   return (
-    <div className="flex min-h-screen">
+    <div className="flex min-h-screen overflow-x-hidden">
       {/* MOBILE OVERLAY */}
       {isMobileOpen && (
         <div
@@ -221,33 +252,108 @@ export default function AdminLayout({
               )}
               <div className="space-y-0.5 xs:space-y-1">
                 {group.items.map((item) => {
-                  const active = pathname === item.href;
+                  const active = pathname === item.href || item.subItems?.some(sub => pathname === sub.href);
+                  const isExpanded = item.expandable && expandedMenus.includes(item.id || "");
+                  
                   return (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      onClick={() => setIsMobileOpen(false)}
-                      className={`flex items-center gap-2 xs:gap-2 sm:gap-3 ${isCollapsed ? "px-2 xs:px-3 justify-center" : "px-2 xs:px-3 sm:px-4"} py-2 xs:py-2.5 sm:py-3 lg:py-3.5 rounded-lg sm:rounded-xl transition-all duration-200 group relative
-                        ${
-                          active
-                            ? "bg-white text-[#7d1a1a] shadow-xl shadow-black/20"
-                            : "text-white/60 hover:text-white hover:bg-white/10"
-                        }
-                      `}
-                    >
-                      <item.icon
-                        size={isCollapsed ? 16 : 18}
-                        className={`flex-shrink-0 xs:w-[18px] xs:h-[18px] sm:w-5 sm:h-5 ${active ? "text-[#7d1a1a]" : "group-hover:scale-110 transition-transform"}`}
-                      />
-                      {!isCollapsed && (
-                        <span className="text-[11px] xs:text-xs sm:text-sm font-semibold tracking-wide truncate">
-                          {item.label}
-                        </span>
+                    <div key={item.href}>
+                      {/* Main Menu Item */}
+                      {item.expandable ? (
+                        <button
+                          onClick={() => toggleMenu(item.id || "")}
+                          className={`w-full flex items-center gap-2 xs:gap-2 sm:gap-3 ${isCollapsed ? "px-2 xs:px-3 justify-center" : "px-2 xs:px-3 sm:px-4"} py-2 xs:py-2.5 sm:py-3 lg:py-3.5 rounded-lg sm:rounded-xl transition-all duration-200 group relative cursor-pointer
+                            ${
+                              active
+                                ? "bg-white text-[#7d1a1a] shadow-xl shadow-black/20"
+                                : "text-white/60 hover:text-white hover:bg-white/10"
+                            }
+                          `}
+                        >
+                          <item.icon
+                            size={isCollapsed ? 16 : 18}
+                            className={`flex-shrink-0 xs:w-[18px] xs:h-[18px] sm:w-5 sm:h-5 ${active ? "text-[#7d1a1a]" : "group-hover:scale-110 transition-transform"}`}
+                          />
+                          {!isCollapsed && (
+                            <>
+                              <span className="text-[11px] xs:text-xs sm:text-sm font-semibold tracking-wide truncate flex-1 text-left">
+                                {item.label}
+                              </span>
+                              <ChevronDown
+                                size={14}
+                                className={`flex-shrink-0 transition-transform duration-200 ${
+                                  isExpanded ? "rotate-180" : ""
+                                } ${active ? "text-[#7d1a1a]" : ""}`}
+                              />
+                            </>
+                          )}
+                        </button>
+                      ) : (
+                        <Link
+                          href={item.href}
+                          onClick={() => setIsMobileOpen(false)}
+                          className={`flex items-center gap-2 xs:gap-2 sm:gap-3 ${isCollapsed ? "px-2 xs:px-3 justify-center" : "px-2 xs:px-3 sm:px-4"} py-2 xs:py-2.5 sm:py-3 lg:py-3.5 rounded-lg sm:rounded-xl transition-all duration-200 group relative
+                            ${
+                              active
+                                ? "bg-white text-[#7d1a1a] shadow-xl shadow-black/20"
+                                : "text-white/60 hover:text-white hover:bg-white/10"
+                            }
+                          `}
+                        >
+                          <item.icon
+                            size={isCollapsed ? 16 : 18}
+                            className={`flex-shrink-0 xs:w-[18px] xs:h-[18px] sm:w-5 sm:h-5 ${active ? "text-[#7d1a1a]" : "group-hover:scale-110 transition-transform"}`}
+                          />
+                          {!isCollapsed && (
+                            <span className="text-[11px] xs:text-xs sm:text-sm font-semibold tracking-wide truncate">
+                              {item.label}
+                            </span>
+                          )}
+                          {active && !isCollapsed && (
+                            <div className="absolute right-2 xs:right-3 w-1 h-1 xs:w-1.5 xs:h-1.5 bg-[#7d1a1a] rounded-full flex-shrink-0" />
+                          )}
+                        </Link>
                       )}
-                      {active && !isCollapsed && (
-                        <div className="absolute right-2 xs:right-3 w-1 h-1 xs:w-1.5 xs:h-1.5 bg-[#7d1a1a] rounded-full flex-shrink-0" />
+
+                      {/* Sub Items (only show if expanded and not collapsed sidebar) */}
+                      {item.expandable && item.subItems && !isCollapsed && (
+                        <div
+                          className={`overflow-hidden transition-all duration-300 ${
+                            isExpanded ? "max-h-96 opacity-100 mt-1" : "max-h-0 opacity-0"
+                          }`}
+                        >
+                          <div className="ml-3 xs:ml-4 sm:ml-6 space-y-0.5 border-l-2 border-white/10 pl-2 xs:pl-3 sm:pl-4">
+                            {item.subItems.map((subItem) => {
+                              const subActive = pathname === subItem.href;
+                              return (
+                                <Link
+                                  key={subItem.href}
+                                  href={subItem.href}
+                                  onClick={() => setIsMobileOpen(false)}
+                                  className={`flex items-center gap-2 xs:gap-2 sm:gap-3 px-2 xs:px-3 sm:px-4 py-2 xs:py-2.5 rounded-lg sm:rounded-xl transition-all duration-200 group relative
+                                    ${
+                                      subActive
+                                        ? "bg-white/20 text-white shadow-lg"
+                                        : "text-white/50 hover:text-white hover:bg-white/5"
+                                    }
+                                  `}
+                                >
+                                  <subItem.icon
+                                    size={14}
+                                    className={`flex-shrink-0 xs:w-4 xs:h-4 ${subActive ? "text-white" : "group-hover:scale-110 transition-transform"}`}
+                                  />
+                                  <span className="text-[10px] xs:text-[11px] sm:text-xs font-semibold tracking-wide truncate">
+                                    {subItem.label}
+                                  </span>
+                                  {subActive && (
+                                    <div className="absolute right-2 xs:right-3 w-1 h-1 xs:w-1.5 xs:h-1.5 bg-white rounded-full flex-shrink-0" />
+                                  )}
+                                </Link>
+                              );
+                            })}
+                          </div>
+                        </div>
                       )}
-                    </Link>
+                    </div>
                   );
                 })}
               </div>
@@ -287,7 +393,7 @@ export default function AdminLayout({
 
       {/* MAIN CONTENT WRAPPER */}
       <div
-        className={`flex-1 transition-all duration-300 ${isCollapsed ? "lg:ml-16 xl:ml-20" : "lg:ml-64"}`}
+        className={`flex-1 transition-all duration-300 ${isCollapsed ? "lg:ml-16 xl:ml-20" : "lg:ml-64"} overflow-x-hidden`}
       >
         {/* HEADER */}
         <header

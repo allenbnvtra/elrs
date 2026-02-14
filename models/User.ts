@@ -3,7 +3,7 @@ import bcrypt from "bcrypt";
 import clientPromise from "@/lib/mongodb";
 
 export type UserRole = "admin" | "faculty" | "student";
-export type CourseType = "BSGE" | "BSABE";
+export type CourseType = "BSGE" | "BSABEN";
 export type StudentStatus = "pending" | "approved" | "rejected";
 
 const SALT_ROUNDS = 12;

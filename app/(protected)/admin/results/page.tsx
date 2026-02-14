@@ -16,7 +16,7 @@ interface Result {
   questionText: string;
   subject: string;
   category: string;
-  course: "BSABE" | "BSGE";
+  course: "BSABEN" | "BSGE";
   selectedAnswer: string;
   correctAnswer: string;
   isCorrect: boolean;
@@ -38,7 +38,7 @@ interface Stats {
     uniqueStudents: number;
     overallScore: number;
   };
-  bsabe: {
+  bsaben: {
     totalPool: number;
     correct: number;
     wrong: number;
@@ -266,7 +266,7 @@ export default function ResultsPage() {
       {/* 3. COMPARATIVE STATS */}
       {stats && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 xs:gap-6 sm:gap-8">
-          {/* BSABE Card */}
+          {/* BSABEN Card */}
           <div className="bg-white p-5 xs:p-7 sm:p-10 rounded-[24px] xs:rounded-[32px] sm:rounded-[40px] shadow-sm border border-gray-100 relative group overflow-hidden">
             <div className="absolute top-0 right-0 p-4 xs:p-6 sm:p-8 text-[#7d1a1a]/10 group-hover:scale-110 transition-transform">
               <GraduationCap size={80} className="xs:w-[100px] xs:h-[100px] sm:w-[120px] sm:h-[120px]" />
@@ -278,7 +278,7 @@ export default function ResultsPage() {
                 </span>
               </div>
               <h3 className="text-xl xs:text-2xl sm:text-3xl font-black text-gray-900 mb-4 xs:mb-6 sm:mb-8 tracking-tight">
-                BSABE <span className="text-[#7d1a1a]">Stats</span>
+                BSABEN <span className="text-[#7d1a1a]">Stats</span>
               </h3>
               
               <div className="grid grid-cols-2 gap-4 xs:gap-6 sm:gap-10">
@@ -287,7 +287,7 @@ export default function ResultsPage() {
                     Total Pool
                   </p>
                   <p className="text-2xl xs:text-3xl sm:text-4xl font-black text-gray-900 tracking-tighter">
-                    {stats.bsabe.totalPool.toLocaleString()}
+                    {stats.bsaben.totalPool.toLocaleString()}
                   </p>
                 </div>
                 <div className="border-l-2 xs:border-l-4 border-[#7d1a1a] pl-2 xs:pl-3 sm:pl-4">
@@ -295,7 +295,7 @@ export default function ResultsPage() {
                     Success Rate
                   </p>
                   <p className="text-2xl xs:text-3xl sm:text-4xl font-black text-gray-900 tracking-tighter">
-                    {stats.bsabe.successRate.toFixed(2)}%
+                    {stats.bsaben.successRate.toFixed(2)}%
                   </p>
                 </div>
                 <div className="border-l-2 xs:border-l-4 border-emerald-500 pl-2 xs:pl-3 sm:pl-4">
@@ -303,7 +303,7 @@ export default function ResultsPage() {
                     Correct
                   </p>
                   <p className="text-2xl xs:text-3xl sm:text-4xl font-black text-gray-900 tracking-tighter">
-                    {stats.bsabe.correct.toLocaleString()}
+                    {stats.bsaben.correct.toLocaleString()}
                   </p>
                 </div>
                 <div className="border-l-2 xs:border-l-4 border-red-500 pl-2 xs:pl-3 sm:pl-4">
@@ -311,7 +311,7 @@ export default function ResultsPage() {
                     Wrong
                   </p>
                   <p className="text-2xl xs:text-3xl sm:text-4xl font-black text-gray-900 tracking-tighter">
-                    {stats.bsabe.wrong.toLocaleString()}
+                    {stats.bsaben.wrong.toLocaleString()}
                   </p>
                 </div>
               </div>

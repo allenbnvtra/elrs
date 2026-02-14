@@ -9,6 +9,7 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const course = searchParams.get("course") as CourseType | null;
+    const area = searchParams.get("area"); // NEW: Filter by area for BSABEN
     const search = searchParams.get("search");
 
     const client = await clientPromise;
@@ -19,6 +20,7 @@ export async function GET(request: NextRequest) {
     // Build filter
     const filter: Record<string, unknown> = {};
     if (course) filter.course = course;
+    if (area) filter.area = area; // NEW: Filter subjects by area (for BSABEN)
     if (search) {
       filter.$or = [
         { name: { $regex: search, $options: "i" } },
@@ -34,10 +36,18 @@ export async function GET(request: NextRequest) {
     // Get question counts for each subject
     const subjectsWithCounts = await Promise.all(
       subjects.map(async (subject) => {
-        const questionCount = await questionsCol.countDocuments({
+        // Build question filter - CRITICAL FIX
+        const questionFilter: any = {
           subject: subject.name,
           course: subject.course,
-        });
+        };
+        
+        // For BSABEN subjects, also filter by area when counting questions
+        if (subject.course === "BSABEN" && subject.area) {
+          questionFilter.area = subject.area;
+        }
+
+        const questionCount = await questionsCol.countDocuments(questionFilter);
         return { ...subject, questionCount };
       })
     );
@@ -56,7 +66,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { name, description, course, userId } = body;
+    const { name, description, course, area, userId } = body;
 
     // Validation
     if (!name || !course || !userId) {
@@ -73,10 +83,26 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const validCourses: CourseType[] = ["BSABE", "BSGE"];
+    const validCourses: CourseType[] = ["BSABEN", "BSGE"];
     if (!validCourses.includes(course)) {
       return NextResponse.json(
-        { error: "Invalid course. Must be BSABE or BSGE." },
+        { error: "Invalid course. Must be BSABEN or BSGE." },
+        { status: 400 }
+      );
+    }
+
+    // BSABEN requires area
+    if (course === "BSABEN" && !area) {
+      return NextResponse.json(
+        { error: "Area is required for BSABEN subjects" },
+        { status: 400 }
+      );
+    }
+
+    // BSGE should not have area
+    if (course === "BSGE" && area) {
+      return NextResponse.json(
+        { error: "BSGE subjects should not have an area" },
         { status: 400 }
       );
     }
@@ -99,17 +125,24 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check for duplicate subject name (case-insensitive) within the same course
-    const existing = await subjectsCol.findOne({
+    // Check for duplicate subject name within the same course (and area for BSABEN)
+    const duplicateFilter: any = {
       name: { $regex: `^${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, $options: "i" },
       course: course,
-    });
+    };
+
+    // For BSABE, also check within the same area
+    if (course === "BSABEN") {
+      duplicateFilter.area = area;
+    }
+
+    const existing = await subjectsCol.findOne(duplicateFilter);
 
     if (existing) {
-      return NextResponse.json(
-        { error: "A subject with this name already exists for this course." },
-        { status: 409 }
-      );
+      const errorMsg = course === "BSABEN" 
+        ? "A subject with this name already exists in this area."
+        : "A subject with this name already exists for this course.";
+      return NextResponse.json({ error: errorMsg }, { status: 409 });
     }
 
     const now = new Date();
@@ -117,6 +150,7 @@ export async function POST(request: NextRequest) {
       name: name.trim(),
       description: description?.trim() || undefined,
       course,
+      area: course === "BSABEN" ? area : undefined, // NEW: Store area for BSABEN
       createdBy: new ObjectId(userId),
       createdByName: user.name,
       createdAt: now,

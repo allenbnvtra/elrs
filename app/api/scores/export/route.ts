@@ -4,7 +4,7 @@ import clientPromise, { dbName } from "@/lib/mongodb";
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const course = searchParams.get("course") || "BSABE";
+    const course = searchParams.get("course") || "BSABEN";
     const status = searchParams.get("status");
     const searchQuery = searchParams.get("search") || "";
 

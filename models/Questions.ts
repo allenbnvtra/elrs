@@ -2,7 +2,7 @@ import { ObjectId, Collection } from "mongodb";
 import clientPromise, { dbName } from "@/lib/mongodb";
 
 export type DifficultyType = "Easy" | "Medium" | "Hard";
-export type CourseType = "BSABE" | "BSGE";
+export type CourseType = "BSABEN" | "BSGE";
 export type CorrectAnswer = "A" | "B" | "C" | "D";
 
 export interface Question {
@@ -16,8 +16,36 @@ export interface Question {
   difficulty: DifficultyType;
   category: string;
   course: CourseType;
+  
+  // BSABE has area + subject, BSGE only has subject
+  area?: string;  // Optional - only for BSABEN
   subject: string;
+  
   explanation?: string;
+  isActive: boolean;  // NEW: Active/Inactive status
+  createdBy: ObjectId;
+  createdByName: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface Area {
+  _id?: ObjectId;
+  name: string;
+  description?: string;
+  course: CourseType;  // Always BSABEN
+  createdBy: ObjectId;
+  createdByName: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface Subject {
+  _id?: ObjectId;
+  name: string;
+  description?: string;
+  course: CourseType;
+  area?: string;  // Optional - only for BSABEN
   createdBy: ObjectId;
   createdByName: string;
   createdAt: Date;
@@ -34,6 +62,8 @@ export interface ImportRow {
   difficulty: string;
   category: string;
   course: string;
+  isActive: boolean;
+  area?: string;  // Optional - only for BSABEN
   subject: string;
   explanation?: string;
 }
@@ -46,9 +76,19 @@ export interface ImportResult {
   duplicatesInDb: Array<{ row: number; text: string }>;
 }
 
-async function getCollection(): Promise<Collection<Question>> {
+async function getQuestionsCollection(): Promise<Collection<Question>> {
   const client = await clientPromise;
   return client.db(dbName).collection<Question>("questions");
 }
 
-export { getCollection };
+async function getAreasCollection(): Promise<Collection<Area>> {
+  const client = await clientPromise;
+  return client.db(dbName).collection<Area>("areas");
+}
+
+async function getSubjectsCollection(): Promise<Collection<Subject>> {
+  const client = await clientPromise;
+  return client.db(dbName).collection<Subject>("subjects");
+}
+
+export { getQuestionsCollection, getAreasCollection, getSubjectsCollection };

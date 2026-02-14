@@ -9,13 +9,14 @@ type Params = { params: Promise<{ id: string }> };
 // ─── PUT /api/subjects/[id] ─────────────────────────────────────────────────
 export async function PUT(request: NextRequest, { params }: Params) {
   try {
-    const { id } = await params; // ← await params here
+    const { id } = await params;
     if (!ObjectId.isValid(id)) {
       return NextResponse.json({ error: "Invalid subject ID" }, { status: 400 });
     }
 
     const body = await request.json();
-    const { name, description, course, userId } = body;
+    const { userId, _id, createdBy, createdByName, createdAt, ...updates } = body;
+    const { name, description, course, area } = updates;
 
     if (!userId) {
       return NextResponse.json({ error: "userId is required" }, { status: 400 });
@@ -37,10 +38,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
     }
 
     if (user.role !== "admin" && user.role !== "faculty") {
-      return NextResponse.json(
-        { error: "Unauthorized" },
-        { status: 403 }
-      );
+      return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
     }
 
     // Check if subject exists
@@ -51,40 +49,70 @@ export async function PUT(request: NextRequest, { params }: Params) {
 
     // Validate course if provided
     if (course) {
-      const validCourses: CourseType[] = ["BSABE", "BSGE"];
+      const validCourses: CourseType[] = ["BSABEN", "BSGE"];
       if (!validCourses.includes(course)) {
-        return NextResponse.json(
-          { error: "Invalid course" },
-          { status: 400 }
-        );
+        return NextResponse.json({ error: "Invalid course" }, { status: 400 });
       }
+    }
+
+    const targetCourse = course || subject.course;
+
+    // Validate area requirements
+    if (targetCourse === "BSABEN" && area === undefined && !subject.area) {
+      return NextResponse.json(
+        { error: "Area is required for BSABEN subjects" },
+        { status: 400 }
+      );
+    }
+
+    if (targetCourse === "BSGE" && area) {
+      return NextResponse.json(
+        { error: "BSGE subjects should not have an area" },
+        { status: 400 }
+      );
     }
 
     // Check for duplicate name if name is being changed
     if (name && name !== subject.name) {
-      const targetCourse = course || subject.course;
-      const duplicate = await subjectsCol.findOne({
+      const targetArea = area !== undefined ? area : subject.area;
+      
+      const duplicateFilter: any = {
         _id: { $ne: new ObjectId(id) },
         name: { $regex: `^${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, $options: "i" },
         course: targetCourse,
-      });
+      };
+
+      // For BSABEN, check within the same area
+      if (targetCourse === "BSABEN") {
+        duplicateFilter.area = targetArea;
+      }
+
+      const duplicate = await subjectsCol.findOne(duplicateFilter);
 
       if (duplicate) {
-        return NextResponse.json(
-          { error: "A subject with this name already exists for this course." },
-          { status: 409 }
-        );
+        const errorMsg = targetCourse === "BSABEN"
+          ? "A subject with this name already exists in this area."
+          : "A subject with this name already exists for this course.";
+        return NextResponse.json({ error: errorMsg }, { status: 409 });
       }
     }
 
-    // Build update object
+    // Build update object - only include fields that should be updated
     const updateData: any = {
       updatedAt: new Date(),
     };
 
-    if (name) updateData.name = name.trim();
+    if (name !== undefined) updateData.name = name.trim();
     if (description !== undefined) updateData.description = description?.trim() || undefined;
-    if (course) updateData.course = course;
+    if (course !== undefined) updateData.course = course;
+    
+    // Handle area field
+    if (targetCourse === "BSABEN") {
+      if (area !== undefined) updateData.area = area;
+    } else {
+      // BSGE - remove area if it exists
+      updateData.area = undefined;
+    }
 
     const result = await subjectsCol.findOneAndUpdate(
       { _id: new ObjectId(id) },
@@ -105,7 +133,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
 // ─── DELETE /api/subjects/[id] ──────────────────────────────────────────────
 export async function DELETE(request: NextRequest, { params }: Params) {
   try {
-    const { id } = await params; // ← await params here
+    const { id } = await params;
     if (!ObjectId.isValid(id)) {
       return NextResponse.json({ error: "Invalid subject ID" }, { status: 400 });
     }
@@ -134,10 +162,7 @@ export async function DELETE(request: NextRequest, { params }: Params) {
     }
 
     if (user.role !== "admin" && user.role !== "faculty") {
-      return NextResponse.json(
-        { error: "Unauthorized" },
-        { status: 403 }
-      );
+      return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
     }
 
     // Check if subject exists
@@ -147,10 +172,17 @@ export async function DELETE(request: NextRequest, { params }: Params) {
     }
 
     // Check if there are questions associated with this subject
-    const questionCount = await questionsCol.countDocuments({
+    // CRITICAL FIX: Filter by area for BSABEN subjects
+    const questionFilter: any = {
       subject: subject.name,
       course: subject.course,
-    });
+    };
+
+    if (subject.course === "BSABEN" && subject.area) {
+      questionFilter.area = subject.area;
+    }
+
+    const questionCount = await questionsCol.countDocuments(questionFilter);
 
     if (questionCount > 0) {
       return NextResponse.json(

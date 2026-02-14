@@ -80,7 +80,7 @@ export async function GET(request: NextRequest) {
     // Calculate statistics
     const stats = {
       totalStudents: total,
-      bsabeCount: await usersCol.countDocuments({ role: "student", course: "BSABE", status: "approved" }),
+      bsabenCount: await usersCol.countDocuments({ role: "student", course: "BSABEN", status: "approved" }),
       bsgeCount: await usersCol.countDocuments({ role: "student", course: "BSGE", status: "approved" }),
     };
 

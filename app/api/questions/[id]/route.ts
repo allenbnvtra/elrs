@@ -9,13 +9,13 @@ type Params = { params: Promise<{ id: string }> };
 // ─── PUT /api/questions/[id] ───────────────────────────────────────────────────
 export async function PUT(request: NextRequest, { params }: Params) {
   try {
-    const { id } = await params; // ← await params here
+    const { id } = await params;
     if (!ObjectId.isValid(id)) {
       return NextResponse.json({ error: "Invalid question ID" }, { status: 400 });
     }
 
     const body = await request.json();
-    const { userId, ...updates } = body;
+    const { userId, _id, createdBy, createdByName, createdAt, ...updates } = body;
 
     if (!userId) return NextResponse.json({ error: "userId is required" }, { status: 400 });
     if (!ObjectId.isValid(userId)) {
@@ -37,7 +37,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
     if (!question) return NextResponse.json({ error: "Question not found" }, { status: 404 });
 
     // Validate updated fields if provided
-    const validCourses: CourseType[] = ["BSABE", "BSGE"];
+    const validCourses: CourseType[] = ["BSABEN", "BSGE"];
     const validDifficulties: DifficultyType[] = ["Easy", "Medium", "Hard"];
     const validAnswers: CorrectAnswer[] = ["A", "B", "C", "D"];
 
@@ -51,23 +51,62 @@ export async function PUT(request: NextRequest, { params }: Params) {
       return NextResponse.json({ error: "Invalid correct answer" }, { status: 400 });
     }
 
+    // Validate isActive if provided
+    if (updates.isActive !== undefined && typeof updates.isActive !== 'boolean') {
+      return NextResponse.json({ error: "isActive must be a boolean" }, { status: 400 });
+    }
+
     // Duplicate check if questionText changed
     if (updates.questionText && updates.questionText !== question.questionText) {
-      const duplicate = await questionsCol.findOne({
+      const duplicateFilter: any = {
         _id: { $ne: new ObjectId(id) },
         questionText: {
           $regex: `^${updates.questionText.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`,
           $options: "i",
         },
-      });
+        course: updates.course || question.course,
+      };
+
+      // For BSABEN, check within same area and subject
+      if ((updates.course || question.course) === "BSABEN") {
+        duplicateFilter.area = updates.area || question.area;
+        duplicateFilter.subject = updates.subject || question.subject;
+      } else {
+        duplicateFilter.subject = updates.subject || question.subject;
+      }
+
+      const duplicate = await questionsCol.findOne(duplicateFilter);
       if (duplicate) {
-        return NextResponse.json({ error: "A question with this text already exists." }, { status: 409 });
+        return NextResponse.json({ error: "A question with this text already exists in this area/subject." }, { status: 409 });
       }
     }
 
+    // Prepare update data - only include fields that should be updated
+    const updateData: any = {
+      updatedAt: new Date()
+    };
+
+    // Only update fields that are present in the updates object
+    const allowedFields = [
+      'questionText', 'optionA', 'optionB', 'optionC', 'optionD',
+      'correctAnswer', 'difficulty', 'category', 'course', 'area',
+      'subject', 'explanation', 'isActive'
+    ];
+
+    for (const field of allowedFields) {
+      if (field in updates) {
+        updateData[field] = updates[field];
+      }
+    }
+
+    // Handle optional fields - convert empty strings to undefined
+    if (updateData.optionC === "") updateData.optionC = undefined;
+    if (updateData.optionD === "") updateData.optionD = undefined;
+    if (updateData.explanation === "") updateData.explanation = undefined;
+
     const result = await questionsCol.findOneAndUpdate(
       { _id: new ObjectId(id) },
-      { $set: { ...updates, updatedAt: new Date() } },
+      { $set: updateData },
       { returnDocument: "after" }
     );
 
@@ -81,7 +120,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
 // ─── DELETE /api/questions/[id] ───────────────────────────────────────────────
 export async function DELETE(request: NextRequest, { params }: Params) {
   try {
-    const { id } = await params; // ← await params here
+    const { id } = await params;
     if (!ObjectId.isValid(id)) {
       return NextResponse.json({ error: "Invalid question ID" }, { status: 400 });
     }

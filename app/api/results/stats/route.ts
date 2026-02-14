@@ -41,10 +41,10 @@ export async function GET() {
       ])
       .toArray();
 
-    // BSABE stats
-    const [bsabeStats] = await responsesCol
+    // BSABEN stats
+    const [bsabenStats] = await responsesCol
       .aggregate([
-        { $match: { course: "BSABE" } },
+        { $match: { course: "BSABEN" } },
         {
           $group: {
             _id: null,
@@ -115,7 +115,7 @@ export async function GET() {
         uniqueStudents: 0,
         overallScore: 0
       },
-      bsabe: bsabeStats || {
+      bsaben: bsabenStats || {
         totalPool: 0,
         correct: 0,
         wrong: 0,

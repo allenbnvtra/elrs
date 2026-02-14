@@ -1,13 +1,14 @@
 import { ObjectId, Collection } from "mongodb";
 import clientPromise, { dbName } from "@/lib/mongodb";
 
-export type CourseType = "BSABE" | "BSGE";
+export type CourseType = "BSABEN" | "BSGE";
 
 export interface Subject {
   _id?: ObjectId;
   name: string;
   description?: string;
   course: CourseType;
+  area?: string;
   createdBy: ObjectId;
   createdByName: string;
   createdAt: Date;
