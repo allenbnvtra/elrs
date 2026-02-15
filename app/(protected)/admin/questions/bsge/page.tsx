@@ -14,7 +14,9 @@ interface Subject {
   _id: string;
   name: string;
   description?: string;
-  questionCount: number;
+  course: string;
+  area?: string;
+  questionCount: number; // This is returned by the API
   createdAt: string;
 }
 
@@ -133,6 +135,7 @@ function QuestionModal({
   );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [loadingSubjects, setLoadingSubjects] = useState(false);
   
   const [showOptionC, setShowOptionC] = useState(
     isEdit ? (!!editQuestion.optionC || editQuestion.correctAnswer === "C" || editQuestion.correctAnswer === "D") : false

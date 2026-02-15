@@ -12,19 +12,19 @@ export async function POST(request: NextRequest) {
     const description = formData.get("description") as string;
     const type = formData.get("type") as MaterialType;
     const course = formData.get("course") as CourseType;
-    const area = formData.get("area") as string;
+    const area = formData.get("area") as string | "";
     const subject = formData.get("subject") as string;
     const videoUrl = formData.get("videoUrl") as string;
     const videoDuration = formData.get("videoDuration") as string;
     const userId = formData.get("userId") as string;
     const pdfFile = formData.get("file") as File | null;
 
-    console.log("📝 Upload request received:", { title, type, course, area, subject });
+    console.log("📝 Upload request received:", { title, type, course, area, subject, userId });
 
-    // Validation
-    if (!title || !type || !course || !area || !subject || !userId) {
+    // Basic validation
+    if (!title || !type || !course || !subject || !userId) {
       return NextResponse.json(
-        { error: "Missing required fields (title, type, course, area, subject, userId)" },
+        { error: "Missing required fields (title, type, course, subject, userId)" },
         { status: 400 }
       );
     }
@@ -43,6 +43,19 @@ export async function POST(request: NextRequest) {
         { error: "Invalid course" },
         { status: 400 }
       );
+    }
+
+    // BSABEN requires area
+    if (course === "BSABEN" && !area) {
+      return NextResponse.json(
+        { error: "Area is required for BSABEN materials" },
+        { status: 400 }
+      );
+    }
+
+    // BSGE should not have area
+    if (course === "BSGE" && area) {
+      console.log("⚠️ Warning: BSGE material submitted with area, ignoring area field");
     }
 
     // Connect to database
@@ -103,7 +116,7 @@ export async function POST(request: NextRequest) {
         description: description || undefined,
         type: "video",
         course,
-        area,
+        area: course === "BSABEN" ? area : "", // Only set area for BSABEN
         subject,
         videoUrl,
         videoDuration: videoDuration || "00:00",
@@ -150,7 +163,7 @@ export async function POST(request: NextRequest) {
         description: description || undefined,
         type: "document",
         course,
-        area,
+        area: course === "BSABEN" ? area : "", // Only set area for BSABEN
         subject,
         fileUrl,
         fileName: pdfFile.name,
@@ -164,7 +177,13 @@ export async function POST(request: NextRequest) {
     }
 
     // Insert material into database
-    console.log("💾 Inserting material into database...");
+    console.log("💾 Inserting material into database...", {
+      title: newMaterial.title,
+      course: newMaterial.course,
+      area: newMaterial.area,
+      subject: newMaterial.subject,
+    });
+    
     const result = await materialsCollection.insertOne(newMaterial as any);
     console.log("✅ Material inserted with ID:", result.insertedId);
 

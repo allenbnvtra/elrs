@@ -25,37 +25,114 @@ function createDuplicateKey(course: string, area: string | undefined, subject: s
 }
 
 function validateRow(row: ImportRow, rowNum: number, course: CourseType): string | null {
-  if (!row.question_text?.trim()) return `Row ${rowNum}: question_text is required`;
-  if (!row.option_a?.trim()) return `Row ${rowNum}: option_a is required`;
-  if (!row.option_b?.trim()) return `Row ${rowNum}: option_b is required`;
+  if (!String(row.question_text ?? "").trim()) return `Row ${rowNum}: question_text is required`;
+  if (!String(row.option_a ?? "").trim()) return `Row ${rowNum}: option_a is required`;
+  if (!String(row.option_b ?? "").trim()) return `Row ${rowNum}: option_b is required`;
 
   const answer = String(row.correct_answer ?? "").trim().toUpperCase() as CorrectAnswer;
   if (!VALID_ANSWERS.includes(answer)) {
     return `Row ${rowNum}: correct_answer must be A, B, C, or D`;
   }
 
-  const difficulty = row.difficulty?.trim() as DifficultyType;
+  const difficulty = String(row.difficulty ?? "").trim() as DifficultyType;
   if (!VALID_DIFFICULTIES.includes(difficulty)) {
     return `Row ${rowNum}: difficulty must be Easy, Medium, or Hard`;
   }
 
-  if (!row.category?.trim()) return `Row ${rowNum}: category is required`;
-  if (!row.subject?.trim()) return `Row ${rowNum}: subject is required`;
+  if (!String(row.category ?? "").trim()) return `Row ${rowNum}: category is required`;
+  if (!String(row.subject ?? "").trim()) return `Row ${rowNum}: subject is required`;
 
   // BSABEN requires area
-  if (course === "BSABEN" && !row.area?.trim()) {
+  if (course === "BSABEN" && !String(row.area ?? "").trim()) {
     return `Row ${rowNum}: area is required for BSABEN questions`;
   }
 
   // If answer is C or D, the corresponding option must exist
-  if (answer === "C" && !row.option_c?.trim()) {
+  if (answer === "C" && !String(row.option_c ?? "").trim()) {
     return `Row ${rowNum}: option_c is required when correct_answer is C`;
   }
-  if (answer === "D" && !row.option_d?.trim()) {
+  if (answer === "D" && !String(row.option_d ?? "").trim()) {
     return `Row ${rowNum}: option_d is required when correct_answer is D`;
   }
 
   return null;
+}
+
+// Helper function to find or create an area (case-insensitive)
+async function ensureAreaExists(
+  db: any,
+  areaName: string,
+  course: CourseType,
+  userId: string,
+  userName: string
+): Promise<string> {
+  const areasCol = db.collection("areas");
+  
+  // Check if area already exists (case-insensitive)
+  const existing = await areasCol.findOne({
+    course,
+    name: { $regex: `^${areaName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, $options: "i" }
+  });
+  
+  if (existing) {
+    return existing.name; // Return the existing name (preserves original casing)
+  }
+  
+  // Create new area
+  const now = new Date();
+  await areasCol.insertOne({
+    name: areaName,
+    course,
+    createdBy: new ObjectId(userId),
+    createdByName: userName,
+    createdAt: now,
+    updatedAt: now,
+  });
+  
+  return areaName;
+}
+
+// Helper function to find or create a subject (case-insensitive)
+async function ensureSubjectExists(
+  db: any,
+  subjectName: string,
+  course: CourseType,
+  area: string | undefined,
+  userId: string,
+  userName: string
+): Promise<string> {
+  const subjectsCol = db.collection("subjects");
+  
+  // Build filter for checking existing subject
+  const filter: any = {
+    course,
+    name: { $regex: `^${subjectName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, $options: "i" }
+  };
+  
+  // For BSABEN, also match by area
+  if (course === "BSABEN" && area) {
+    filter.area = { $regex: `^${area.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, $options: "i" };
+  }
+  
+  const existing = await subjectsCol.findOne(filter);
+  
+  if (existing) {
+    return existing.name; // Return the existing name (preserves original casing)
+  }
+  
+  // Create new subject
+  const now = new Date();
+  await subjectsCol.insertOne({
+    name: subjectName,
+    course,
+    area: course === "BSABEN" ? area : undefined,
+    createdBy: new ObjectId(userId),
+    createdByName: userName,
+    createdAt: now,
+    updatedAt: now,
+  });
+  
+  return subjectName;
 }
 
 export async function POST(request: NextRequest) {
@@ -141,6 +218,10 @@ export async function POST(request: NextRequest) {
     const toInsert: Omit<Question, "_id">[] = [];
     const now = new Date();
 
+    // Track unique areas and subjects to create
+    const areasToEnsure = new Set<string>();
+    const subjectsToEnsure = new Map<string, string | undefined>(); // subject name -> area
+
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
       const rowNum = i + 2; // Excel rows start at 2 (row 1 = headers)
@@ -154,8 +235,15 @@ export async function POST(request: NextRequest) {
         continue;
       }
 
-      const area = course === "BSABEN" ? String(row.area).trim() : undefined;
-      const subject = String(row.subject).trim();
+      const area = course === "BSABEN" ? String(row.area ?? "").trim() : undefined;
+      const subject = String(row.subject ?? "").trim();
+      
+      // Collect areas and subjects to ensure they exist
+      if (area) {
+        areasToEnsure.add(area);
+      }
+      subjectsToEnsure.set(subject, area);
+      
       const duplicateKey = createDuplicateKey(course, area, subject, rawText);
 
       // Duplicate within file
@@ -183,16 +271,16 @@ export async function POST(request: NextRequest) {
 
       toInsert.push({
         questionText: rawText,
-        optionA: String(row.option_a).trim(),
-        optionB: String(row.option_b).trim(),
+        optionA: String(row.option_a ?? "").trim(),
+        optionB: String(row.option_b ?? "").trim(),
         optionC: row.option_c ? String(row.option_c).trim() : undefined,
         optionD: row.option_d ? String(row.option_d).trim() : undefined,
-        correctAnswer: String(row.correct_answer).trim().toUpperCase() as CorrectAnswer,
-        difficulty: row.difficulty.trim() as DifficultyType,
-        category: String(row.category).trim(),
+        correctAnswer: String(row.correct_answer ?? "").trim().toUpperCase() as CorrectAnswer,
+        difficulty: String(row.difficulty ?? "").trim() as DifficultyType,
+        category: String(row.category ?? "").trim(),
         course: course,
         area: area,  // NEW: Only set for BSABEN
-        isActive: row.isActive,
+        isActive: row.isActive !== false, // Default to true if not specified
         subject: subject,
         explanation: row.explanation ? String(row.explanation).trim() : undefined,
         createdBy: new ObjectId(userId),
@@ -200,6 +288,18 @@ export async function POST(request: NextRequest) {
         createdAt: now,
         updatedAt: now,
       });
+    }
+
+    // Ensure all areas exist (for BSABEN)
+    if (course === "BSABEN") {
+      for (const areaName of areasToEnsure) {
+        await ensureAreaExists(db, areaName, course, userId, user.name);
+      }
+    }
+    
+    // Ensure all subjects exist
+    for (const [subjectName, areaName] of subjectsToEnsure.entries()) {
+      await ensureSubjectExists(db, subjectName, course, areaName, userId, user.name);
     }
 
     // Bulk insert valid questions

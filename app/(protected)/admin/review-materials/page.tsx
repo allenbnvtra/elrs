@@ -41,6 +41,8 @@ interface Subject {
   description?: string;
   course: string;
   area?: string;
+  questionCount: number;
+  createdAt: string;
 }
 
 type SortField = "title" | "subject" | "area" | "createdAt" | "type";
@@ -64,13 +66,15 @@ export default function ReviewMaterialsPage() {
   const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
   const [selectedAreas, setSelectedAreas] = useState<string[]>([]);
   const [selectedSubjects, setSelectedSubjects] = useState<string[]>([]);
-  const [showFiltersPanel, setShowFiltersPanel] = useState(false); // Start closed on mobile
+  const [showFiltersPanel, setShowFiltersPanel] = useState(false);
   
   const [materials, setMaterials] = useState<Material[]>([]);
   const [areas, setAreas] = useState<Area[]>([]);
   const [subjects, setSubjects] = useState<Subject[]>([]);
   
   const [isLoading, setIsLoading] = useState(true);
+  const [loadingSubjects, setLoadingSubjects] = useState(false);
+  const [loadingAreas, setLoadingAreas] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [uploadType, setUploadType] = useState<"document" | "video">("document");
@@ -87,60 +91,100 @@ export default function ReviewMaterialsPage() {
     videoDuration: "",
   });
 
-  // Fetch data
+  // Fetch areas (only for BSABEN)
   const fetchAreas = async () => {
     if (selectedCourse === "BSGE") {
+      console.log("🚫 Skipping areas fetch for BSGE (no areas)");
       setAreas([]);
       return;
     }
 
+    setLoadingAreas(true);
     try {
+      console.log("📁 Fetching areas for BSABEN");
       const response = await fetch(`/api/areas?course=${selectedCourse}`);
       const data = await response.json();
+      
       if (response.ok) {
+        console.log(`✅ Fetched ${data.areas?.length || 0} areas`);
         setAreas(data.areas || []);
+      } else {
+        console.error("❌ Failed to fetch areas:", data.error);
+        setAreas([]);
       }
     } catch (error) {
-      console.error("Error fetching areas:", error);
+      console.error("❌ Error fetching areas:", error);
+      setAreas([]);
+    } finally {
+      setLoadingAreas(false);
     }
   };
 
+  // Fetch subjects
   const fetchSubjects = async () => {
+    setLoadingSubjects(true);
     try {
+      console.log(`📚 Fetching subjects for ${selectedCourse}`);
       const response = await fetch(`/api/subjects?course=${selectedCourse}`);
       const data = await response.json();
+      
       if (response.ok) {
-        setSubjects(data.subjects || []);
+        // Filter to ensure we only get subjects for the current course
+        const courseSubjects = (data.subjects || []).filter(
+          (s: Subject) => s.course === selectedCourse
+        );
+        
+        console.log(`✅ Found ${courseSubjects.length} subjects for ${selectedCourse}:`, 
+          courseSubjects.map((s: Subject) => ({ name: s.name, area: s.area }))
+        );
+        
+        setSubjects(courseSubjects);
+      } else {
+        console.error("❌ Failed to fetch subjects:", data.error);
+        setSubjects([]);
       }
     } catch (error) {
-      console.error("Error fetching subjects:", error);
+      console.error("❌ Error fetching subjects:", error);
+      setSubjects([]);
+    } finally {
+      setLoadingSubjects(false);
     }
   };
 
+  // Fetch materials
   const fetchMaterials = async () => {
     try {
       setIsLoading(true);
+      console.log(`📦 Fetching materials for ${selectedCourse}`);
       const queryParams = new URLSearchParams({ course: selectedCourse });
       const response = await fetch(`/api/review-materials?${queryParams}`);
       const data = await response.json();
 
       if (response.ok) {
+        console.log(`✅ Fetched ${data.materials?.length || 0} materials`);
         setMaterials(data.materials);
+      } else {
+        console.error("❌ Failed to fetch materials:", data.error);
+        setMaterials([]);
       }
     } catch (error) {
-      console.error("Error fetching materials:", error);
+      console.error("❌ Error fetching materials:", error);
+      setMaterials([]);
     } finally {
       setIsLoading(false);
     }
   };
 
+  // Effects
   useEffect(() => {
+    console.log(`🔄 Course changed to: ${selectedCourse}`);
     fetchAreas();
     fetchSubjects();
     fetchMaterials();
   }, [selectedCourse]);
 
   useEffect(() => {
+    console.log(`🔄 Resetting filters for course change to ${selectedCourse}`);
     setSelectedAreas([]);
     setSelectedSubjects([]);
     setSelectedTypes([]);
@@ -157,7 +201,12 @@ export default function ReviewMaterialsPage() {
         (item.description && item.description.toLowerCase().includes(searchQuery.toLowerCase()));
 
       const matchesType = selectedTypes.length === 0 || selectedTypes.includes(item.type);
-      const matchesArea = selectedAreas.length === 0 || (item.area && selectedAreas.includes(item.area));
+      
+      // For BSGE: ignore area filter (no areas)
+      const matchesArea = selectedCourse === "BSGE" || 
+        selectedAreas.length === 0 || 
+        (item.area && selectedAreas.includes(item.area));
+      
       const matchesSubject = selectedSubjects.length === 0 || selectedSubjects.includes(item.subject);
 
       return matchesSearch && matchesType && matchesArea && matchesSubject;
@@ -188,7 +237,7 @@ export default function ReviewMaterialsPage() {
     });
 
     return filtered;
-  }, [materials, searchQuery, sortField, sortDirection, selectedTypes, selectedAreas, selectedSubjects]);
+  }, [materials, searchQuery, sortField, sortDirection, selectedTypes, selectedAreas, selectedSubjects, selectedCourse]);
 
   const visibleMaterials = useMemo(() => {
     return filteredAndSortedMaterials.slice(0, visibleCount);
@@ -258,9 +307,11 @@ export default function ReviewMaterialsPage() {
       formData.append("type", uploadType);
       formData.append("course", selectedCourse);
       
+      // Only add area for BSABEN
       if (selectedCourse === "BSABEN" && uploadForm.area) {
         formData.append("area", uploadForm.area);
       }
+      
       formData.append("subject", uploadForm.subject);
       formData.append("userId", user?.id || "");
 
@@ -353,7 +404,6 @@ export default function ReviewMaterialsPage() {
           />
           <div className="absolute right-0 top-0 bottom-0 w-80 bg-white shadow-2xl overflow-y-auto animate-in slide-in-from-right duration-300">
             <div className="p-6 space-y-6">
-              {/* Close Button */}
               <div className="flex items-center justify-between pb-4 border-b border-gray-100">
                 <div className="flex items-center gap-2">
                   <Filter size={18} className="text-[#7d1a1a]" />
@@ -372,7 +422,6 @@ export default function ReviewMaterialsPage() {
                 </button>
               </div>
 
-              {/* Filter Content */}
               <FilterContent 
                 selectedCourse={selectedCourse}
                 setSelectedCourse={setSelectedCourse}
@@ -382,8 +431,10 @@ export default function ReviewMaterialsPage() {
                 materials={materials}
                 selectedAreas={selectedAreas}
                 areas={areas}
+                loadingAreas={loadingAreas}
                 selectedSubjects={selectedSubjects}
                 subjects={subjects}
+                loadingSubjects={loadingSubjects}
                 clearAllFilters={clearAllFilters}
               />
             </div>
@@ -422,8 +473,10 @@ export default function ReviewMaterialsPage() {
               materials={materials}
               selectedAreas={selectedAreas}
               areas={areas}
+              loadingAreas={loadingAreas}
               selectedSubjects={selectedSubjects}
               subjects={subjects}
+              loadingSubjects={loadingSubjects}
               clearAllFilters={clearAllFilters}
             />
           </div>
@@ -439,7 +492,7 @@ export default function ReviewMaterialsPage() {
             <div className="flex items-center gap-2 mb-1">
               <GraduationCap className="text-[#7d1a1a] flex-shrink-0" size={16} />
               <span className="text-[#7d1a1a] font-bold text-[10px] sm:text-xs uppercase tracking-widest">
-                Academic Resources
+                Academic Resources • {selectedCourse}
               </span>
             </div>
             <h1 className="text-xl sm:text-2xl lg:text-3xl font-black text-gray-900 tracking-tight">
@@ -510,7 +563,6 @@ export default function ReviewMaterialsPage() {
             <>
               {/* DESKTOP TABLE VIEW */}
               <div className="hidden lg:flex flex-col h-full">
-                {/* Table Header */}
                 <div className="bg-gray-50 border-b border-gray-200 px-4 xl:px-6 py-3 flex items-center gap-3 xl:gap-4 text-xs font-bold text-gray-600 uppercase tracking-wider flex-shrink-0">
                   <div className="w-8"></div>
                   <button 
@@ -553,7 +605,6 @@ export default function ReviewMaterialsPage() {
                   <div className="w-32 xl:w-36 text-right">Actions</div>
                 </div>
 
-                {/* Table Body */}
                 <div className="flex-1 overflow-y-auto">
                   {visibleMaterials.map((item, index) => (
                     <div 
@@ -874,7 +925,12 @@ export default function ReviewMaterialsPage() {
                     >
                       <option value="">Select Subject</option>
                       {subjects
-                        .filter(s => !uploadForm.area || s.area === uploadForm.area)
+                        .filter(s => {
+                          // For BSGE: show all subjects
+                          if (selectedCourse === "BSGE") return true;
+                          // For BSABEN: filter by selected area
+                          return !uploadForm.area || s.area === uploadForm.area;
+                        })
                         .map((subject) => (
                           <option key={subject._id} value={subject.name}>{subject.name}</option>
                         ))}
@@ -984,7 +1040,7 @@ export default function ReviewMaterialsPage() {
   );
 }
 
-// Filter Content Component (reusable for mobile and desktop)
+// Filter Content Component
 function FilterContent({ 
   selectedCourse, 
   setSelectedCourse, 
@@ -994,8 +1050,10 @@ function FilterContent({
   materials,
   selectedAreas,
   areas,
+  loadingAreas,
   selectedSubjects,
   subjects,
+  loadingSubjects,
   clearAllFilters
 }: any) {
   return (
@@ -1048,45 +1106,67 @@ function FilterContent({
         </div>
       </div>
 
-      {selectedCourse === "BSABEN" && areas.length > 0 && (
+      {/* AREAS - Only show for BSABEN */}
+      {selectedCourse === "BSABEN" && (
         <div>
           <label className="block text-xs font-bold text-gray-700 mb-3 uppercase tracking-wider">
             Area
           </label>
-          <div className="space-y-2 max-h-64 overflow-y-auto">
-            {areas.map((area: Area) => (
-              <label key={area._id} className="flex items-center gap-3 p-3 rounded-xl hover:bg-gray-50 cursor-pointer transition-all">
-                <input
-                  type="checkbox"
-                  checked={selectedAreas.includes(area.name)}
-                  onChange={() => toggleFilter("area", area.name)}
-                  className="w-4 h-4 text-[#7d1a1a] border-gray-300 rounded focus:ring-[#7d1a1a] cursor-pointer"
-                />
-                <div className="flex items-center gap-2 flex-1 text-slate-700 min-w-0">
-                  <Folder size={16} className="text-[#7d1a1a]/70 flex-shrink-0" />
-                  <span className="text-sm font-medium truncate">{area.name}</span>
-                </div>
-                <span className="text-xs text-gray-400 flex-shrink-0">
-                  {materials.filter((m: Material) => m.area === area.name).length}
-                </span>
-              </label>
-            ))}
-          </div>
+          {loadingAreas ? (
+            <div className="text-center py-4">
+              <Loader2 size={20} className="text-[#7d1a1a] mx-auto animate-spin" />
+              <p className="text-xs text-gray-400 mt-2">Loading areas...</p>
+            </div>
+          ) : areas.length > 0 ? (
+            <div className="space-y-2 max-h-64 overflow-y-auto">
+              {areas.map((area: Area) => (
+                <label key={area._id} className="flex items-center gap-3 p-3 rounded-xl hover:bg-gray-50 cursor-pointer transition-all">
+                  <input
+                    type="checkbox"
+                    checked={selectedAreas.includes(area.name)}
+                    onChange={() => toggleFilter("area", area.name)}
+                    className="w-4 h-4 text-[#7d1a1a] border-gray-300 rounded focus:ring-[#7d1a1a] cursor-pointer"
+                  />
+                  <div className="flex items-center gap-2 flex-1 text-slate-700 min-w-0">
+                    <Folder size={16} className="text-[#7d1a1a]/70 flex-shrink-0" />
+                    <span className="text-sm font-medium truncate">{area.name}</span>
+                  </div>
+                  <span className="text-xs text-gray-400 flex-shrink-0">
+                    {materials.filter((m: Material) => m.area === area.name).length}
+                  </span>
+                </label>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-4 bg-gray-50 rounded-xl border-2 border-dashed border-gray-200">
+              <Folder size={24} className="text-gray-300 mx-auto mb-2" />
+              <p className="text-xs text-gray-500">No areas found</p>
+            </div>
+          )}
         </div>
       )}
 
-      {subjects.length > 0 && (
-        <div>
-          <label className="block text-xs font-bold text-gray-700 mb-3 uppercase tracking-wider">
-            Subject
-          </label>
+      {/* SUBJECTS - Always show, filtered by area for BSABEN */}
+      <div>
+        <label className="block text-xs font-bold text-gray-700 mb-3 uppercase tracking-wider">
+          Subject
+        </label>
+        {loadingSubjects ? (
+          <div className="text-center py-4">
+            <Loader2 size={20} className="text-[#7d1a1a] mx-auto animate-spin" />
+            <p className="text-xs text-gray-400 mt-2">Loading subjects...</p>
+          </div>
+        ) : subjects.length > 0 ? (
           <div className="space-y-2 max-h-64 overflow-y-auto">
             {subjects
-              .filter((subject: Subject) => 
-                selectedAreas.length === 0 || 
-                !subject.area || 
-                selectedAreas.includes(subject.area)
-              )
+              .filter((subject: Subject) => {
+                // For BSGE: show all subjects (no area filtering)
+                if (selectedCourse === "BSGE") return true;
+                
+                // For BSABEN: filter by selected areas
+                if (selectedAreas.length === 0) return true;
+                return !subject.area || selectedAreas.includes(subject.area);
+              })
               .map((subject: Subject) => (
                 <label key={subject._id} className="flex items-center gap-3 p-3 rounded-xl hover:bg-gray-50 cursor-pointer transition-all">
                   <input
@@ -1097,16 +1177,35 @@ function FilterContent({
                   />
                   <div className="flex items-center gap-2 flex-1 text-slate-700 min-w-0">
                     <BookOpen size={16} className="text-[#7d1a1a]/70 flex-shrink-0" />
-                    <span className="text-sm font-medium truncate">{subject.name}</span>
+                    <div className="flex-1 min-w-0">
+                      <span className="text-sm font-medium truncate block">{subject.name}</span>
+                      {selectedCourse === "BSABEN" && subject.area && (
+                        <span className="text-xs text-gray-400 truncate block">{subject.area}</span>
+                      )}
+                    </div>
                   </div>
                   <span className="text-xs text-gray-400 flex-shrink-0">
-                    {materials.filter((m: Material) => m.subject === subject.name).length}
+                    {materials.filter((m: Material) => {
+                      // For BSGE: only match subject name
+                      if (selectedCourse === "BSGE") {
+                        return m.subject === subject.name;
+                      }
+                      // For BSABEN: match both subject name and area
+                      return m.subject === subject.name && 
+                        (!subject.area || m.area === subject.area);
+                    }).length}
                   </span>
                 </label>
               ))}
           </div>
-        </div>
-      )}
+        ) : (
+          <div className="text-center py-4 bg-gray-50 rounded-xl border-2 border-dashed border-gray-200">
+            <BookOpen size={24} className="text-gray-300 mx-auto mb-2" />
+            <p className="text-xs text-gray-500">No subjects for {selectedCourse}</p>
+            <p className="text-xs text-gray-400 mt-1">Create in Questions page</p>
+          </div>
+        )}
+      </div>
     </>
   );
 }
