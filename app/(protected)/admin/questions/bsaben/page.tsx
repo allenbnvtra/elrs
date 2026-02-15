@@ -5,9 +5,10 @@ import {
   Plus, Search, Filter, Edit3, Trash2, Layers, ChevronLeft,
   ChevronRight, X, Download, CheckCircle2, AlertCircle,
   Loader2, FileSpreadsheet, AlertTriangle, BookOpen, ArrowLeft, FileText,
-  GraduationCap, FolderTree, Power, Eye, EyeOff
+  GraduationCap, FolderTree, Power, Eye, EyeOff, FileUp
 } from "lucide-react";
 import { useAuth } from "@/contexts/authContext";
+import PDFImportModal from "@/components/admin/questions/PDFImportModal";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface Area {
@@ -403,7 +404,7 @@ function QuestionModal({
   );
 }
 
-// Import Result Modal (same as before)
+// Import Result Modal
 function ImportResultModal({ result, onClose }: { result: ImportResult; onClose: () => void }) {
   const totalDups = result.duplicatesInFile.length + result.duplicatesInDb.length;
   const hasIssues = result.errors.length > 0 || totalDups > 0;
@@ -501,7 +502,7 @@ function ImportResultModal({ result, onClose }: { result: ImportResult; onClose:
   );
 }
 
-// Main Component - BSABE Questions
+// Main Component
 export default function BSABENQuestionsPage() {
   const { user } = useAuth();
   const USER_ID = user?.id;
@@ -548,6 +549,7 @@ export default function BSABENQuestionsPage() {
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [downloadingTemplate, setDownloadingTemplate] = useState(false);
+  const [showPDFImportModal, setShowPDFImportModal] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Fetch Areas
@@ -970,6 +972,21 @@ export default function BSABENQuestionsPage() {
         />
       )}
       {importResult && <ImportResultModal result={importResult} onClose={() => setImportResult(null)} />}
+      {showPDFImportModal && USER_ID && (
+        <PDFImportModal
+          isOpen={showPDFImportModal}
+          onClose={() => setShowPDFImportModal(false)}
+          onSuccess={() => {
+            fetchQuestions();
+            fetchSubjects();
+            fetchAreas();
+          }}
+          userId={USER_ID}
+          course="BSABEN"
+          defaultArea={selectedArea?.name}
+          defaultSubject={selectedSubject?.name}
+        />
+      )}
       <input ref={fileInputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleImportFile} />
 
       {/* HEADER */}
@@ -1035,7 +1052,14 @@ export default function BSABENQuestionsPage() {
                 className="flex items-center gap-1.5 px-4 py-2.5 bg-white border border-gray-200 rounded-xl font-bold text-gray-600 hover:bg-gray-50 text-xs transition-all disabled:opacity-60"
               >
                 {importing ? <Loader2 size={14} className="animate-spin" /> : <Layers size={14} />}
-                Import
+                Excel
+              </button>
+              <button 
+                onClick={() => setShowPDFImportModal(true)}
+                className="flex items-center gap-1.5 px-4 py-2.5 bg-white border border-gray-200 rounded-xl font-bold text-gray-600 hover:bg-gray-50 text-xs transition-all"
+              >
+                <FileUp size={14} />
+                PDF
               </button>
               <button 
                 onClick={openAddQuestion}
