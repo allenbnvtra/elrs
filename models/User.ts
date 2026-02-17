@@ -1,10 +1,10 @@
 import { ObjectId, Collection } from "mongodb";
-import bcrypt from "bcrypt";
 import clientPromise from "@/lib/mongodb";
 
-export type UserRole = "admin" | "faculty" | "student";
-export type CourseType = "BSGE" | "BSABEN";
+export type UserRole     = "admin" | "faculty" | "student";
+export type CourseType   = "BSGE" | "BSABEN";
 export type StudentStatus = "pending" | "approved" | "rejected";
+export type YearLevel    = "1" | "2" | "3" | "4";
 
 const SALT_ROUNDS = 12;
 
@@ -22,6 +22,8 @@ export interface Student extends BaseUser {
   role: "student";
   studentNumber: string;
   course: CourseType;
+  yearLevel?: YearLevel;   // "1" | "2" | "3" | "4"
+  section?: string;        // e.g. "A", "B", "1A"
   status: StudentStatus;
   enrolledCourseIds: ObjectId[];
   approvedBy?: ObjectId;
@@ -33,24 +35,23 @@ export interface Faculty extends BaseUser {
   role: "faculty";
   course: CourseType;
   department: string;
-  status: StudentStatus; // "pending" | "approved" | "rejected"
+  status: StudentStatus;
   courseIdsTeaching: ObjectId[];
   approvedBy?: ObjectId;
   approvedByName?: string;
   approvedAt?: Date;
-  contributions?: number; // Track number of questions added
+  contributions?: number;
   lastActive?: Date;
-  bio?: string; // Optional bio for faculty
+  bio?: string;
 }
 
 export interface Admin extends BaseUser {
   role: "admin";
-  bio?: string; // Optional bio for admin
+  bio?: string;
 }
 
 export type User = Student | Faculty | Admin;
 
-// Remove passwordHash when sending user to frontend
 export function sanitizeUser(user: User) {
   const { passwordHash, ...safeUser } = user;
   return safeUser;

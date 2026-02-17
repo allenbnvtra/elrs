@@ -191,7 +191,6 @@ export default function ProtectedLayout({
           {
             label: "Personal",
             items: [
-              { label: "Records", icon: BarChart3, href: "/student/records" },
               { label: "Settings", icon: Settings, href: "/student/settings" },
             ],
           },
@@ -569,15 +568,6 @@ export default function ProtectedLayout({
           </div>
 
           <div className="flex items-center gap-1.5 xs:gap-2 sm:gap-3 md:gap-6 relative z-10 flex-shrink-0">
-            {/* Notification Bell */}
-            <button
-              className="relative p-1.5 xs:p-2 sm:p-2.5 text-white/60 hover:bg-white/10 rounded-lg sm:rounded-xl transition-all flex-shrink-0"
-              aria-label="Notifications"
-            >
-              <Bell size={16} className="xs:w-[18px] xs:h-[18px] sm:w-5 sm:h-5" />
-              <span className="absolute top-1 right-1 xs:top-1.5 xs:right-1.5 sm:top-2 sm:right-2.5 w-1.5 h-1.5 sm:w-2 sm:h-2 bg-white rounded-full border-2 border-[#5a1313]"></span>
-            </button>
-
             <div className="hidden xs:block h-6 sm:h-8 w-px bg-white/10 mx-0.5 sm:mx-1" />
 
             {/* Profile Section with Dropdown */}

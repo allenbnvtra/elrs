@@ -1,18 +1,10 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import {
-  Clock,
-  ChevronLeft,
-  ChevronRight,
-  Flag,
-  CheckCircle,
-  AlertCircle,
-  Loader2,
-  BookOpen,
-  AlertTriangle,
-  Shield,
-  Eye,
+  Clock, ChevronLeft, ChevronRight, Flag, CheckCircle,
+  AlertCircle, Loader2, BookOpen, AlertTriangle, Shield,
+  Eye, Maximize, Lock,
 } from "lucide-react";
 import { useAuth } from "@/contexts/authContext";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -28,212 +20,231 @@ interface Question {
   category: string;
 }
 
+// How many ms to ignore subsequent violations after one fires (debounce)
+const VIOLATION_DEBOUNCE_MS = 2000;
+
 export default function TakeExamPage() {
   const { user } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  const course = searchParams.get("course");
+  const course  = searchParams.get("course");
   const subject = searchParams.get("subject");
-  const area = searchParams.get("area");
+  const area    = searchParams.get("area");
 
-  const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
-  const [questions, setQuestions] = useState<Question[]>([]);
-  const [examSessionId, setExamSessionId] = useState<string>("");
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [answers, setAnswers] = useState<Record<string, string>>({});
-  const [flagged, setFlagged] = useState<Set<number>>(new Set());
-  const [timeElapsed, setTimeElapsed] = useState(0);
+  const [loading, setLoading]               = useState(true);
+  const [submitting, setSubmitting]         = useState(false);
+  const [questions, setQuestions]           = useState<Question[]>([]);
+  const [examSessionId, setExamSessionId]   = useState("");
+  const [currentIndex, setCurrentIndex]     = useState(0);
+  const [answers, setAnswers]               = useState<Record<string, string>>({});
+  const [flagged, setFlagged]               = useState<Set<number>>(new Set());
+  const [timeElapsed, setTimeElapsed]       = useState(0);
   const [showSubmitConfirm, setShowSubmitConfirm] = useState(false);
 
-  // Anti-cheating state
-  const [violations, setViolations] = useState<number>(0);
+  // Anti-cheat
+  const [violations, setViolations]                     = useState(0);
   const [showViolationWarning, setShowViolationWarning] = useState(false);
-  const [violationMessage, setViolationMessage] = useState("");
-  const [isTabActive, setIsTabActive] = useState(true);
-  const [isFullscreen, setIsFullscreen] = useState(false);
-  const pageRef = useRef<HTMLDivElement>(null);
-  const wasInactiveRef = useRef(false);
+  const [violationMessage, setViolationMessage]         = useState("");
+  const [isFullscreen, setIsFullscreen]                 = useState(false);
+  const [showFullscreenBlock, setShowFullscreenBlock]   = useState(false);
+  const [autoSubmitting, setAutoSubmitting]             = useState(false);
 
-  // Start exam
+  const pageRef              = useRef<HTMLDivElement>(null);
+  const examSessionIdRef     = useRef("");          // always-fresh ref for async callbacks
+  const violationsRef        = useRef(0);           // always-fresh ref
+  const lastViolationTimeRef = useRef(0);           // debounce timestamp
+  const warningTimerRef      = useRef<NodeJS.Timeout | null>(null);
+
+  // Keep refs in sync
+  useEffect(() => { examSessionIdRef.current = examSessionId; }, [examSessionId]);
+  useEffect(() => { violationsRef.current = violations; }, [violations]);
+
+  // ── FULLSCREEN helpers ─────────────────────────────────────────────────────
+  const enterFullscreen = useCallback(() => {
+    const el = pageRef.current ?? document.documentElement;
+    if (!document.fullscreenElement) {
+      el.requestFullscreen({ navigationUI: "hide" }).catch(() => {});
+    }
+  }, []);
+
+  // ── VIOLATION logger (debounced) ───────────────────────────────────────────
+  const logViolation = useCallback(async (type: string) => {
+    const now = Date.now();
+    if (now - lastViolationTimeRef.current < VIOLATION_DEBOUNCE_MS) return;
+    if (violationsRef.current >= 3) return;
+    lastViolationTimeRef.current = now;
+
+    const sessionId = examSessionIdRef.current;
+    if (!sessionId) return;
+
+    try {
+      const res  = await fetch("/api/exams/log-violation", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ examSessionId: sessionId, userId: user?.id, violationType: type, timestamp: new Date() }),
+      });
+      const data = await res.json();
+
+      if (res.ok) {
+        const newCount: number = data.violationCount;
+        setViolations(newCount);
+        violationsRef.current = newCount;
+
+        const remaining = 3 - newCount;
+        const msg = newCount >= 3
+          ? "Maximum violations reached! Your exam will be submitted automatically."
+          : `Violation #${newCount} recorded. ${remaining} warning(s) remaining before auto-submit.`;
+
+        showViolationToast(msg);
+
+        if (data.shouldAutoSubmit) {
+          setAutoSubmitting(true);
+          setTimeout(() => forceSubmit(), 3000);
+        }
+      }
+    } catch (err) {
+      console.error("Violation log error:", err);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
+
+  const showViolationToast = (msg: string) => {
+    setViolationMessage(msg);
+    setShowViolationWarning(true);
+    if (warningTimerRef.current) clearTimeout(warningTimerRef.current);
+    warningTimerRef.current = setTimeout(() => setShowViolationWarning(false), 5000);
+  };
+
+  // ── TIMER ──────────────────────────────────────────────────────────────────
+  useEffect(() => {
+    const id = setInterval(() => setTimeElapsed(p => p + 1), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  // ── START EXAM + INITIAL FULLSCREEN ───────────────────────────────────────
   useEffect(() => {
     if (!user || !course || !subject) return;
     startExam();
-    requestFullscreen();
+    // Small delay so the DOM is mounted before requesting fullscreen
+    const t = setTimeout(enterFullscreen, 400);
+    return () => clearTimeout(t);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, course, subject, area]);
 
-  // Timer
+  // ── FULLSCREEN CHANGE ─────────────────────────────────────────────────────
   useEffect(() => {
-    const interval = setInterval(() => {
-      setTimeElapsed((prev) => prev + 1);
-    }, 1000);
+    const handler = () => {
+      const fs = !!document.fullscreenElement;
+      setIsFullscreen(fs);
 
-    return () => clearInterval(interval);
+      if (!fs) {
+        // Show blocking overlay immediately
+        setShowFullscreenBlock(true);
+        // Log violation
+        logViolation("exit_fullscreen");
+      } else {
+        setShowFullscreenBlock(false);
+      }
+    };
+    document.addEventListener("fullscreenchange", handler);
+    return () => document.removeEventListener("fullscreenchange", handler);
+  }, [logViolation]);
+
+  // ── TAB / WINDOW VISIBILITY ───────────────────────────────────────────────
+  useEffect(() => {
+    const handler = () => {
+      if (document.hidden) {
+        logViolation("tab_switch");
+      }
+    };
+    document.addEventListener("visibilitychange", handler);
+    return () => document.removeEventListener("visibilitychange", handler);
+  }, [logViolation]);
+
+  // ── WINDOW BLUR (switch to another app) ───────────────────────────────────
+  useEffect(() => {
+    const handler = () => logViolation("window_blur");
+    window.addEventListener("blur", handler);
+    return () => window.removeEventListener("blur", handler);
+  }, [logViolation]);
+
+  // ── KEYBOARD SHORTCUTS prevention ─────────────────────────────────────────
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const bad =
+        e.key === "F12" ||
+        (e.ctrlKey && e.shiftKey && ["I","J","C"].includes(e.key)) ||
+        (e.ctrlKey && e.key === "u") ||
+        (e.metaKey && e.altKey && ["i","j"].includes(e.key)) ||
+        // Block Alt+Tab attempt (only fires if focus stays in page)
+        (e.altKey && e.key === "Tab") ||
+        // Block Win/Meta key combos
+        (e.metaKey && e.key !== "v");
+
+      if (bad) {
+        e.preventDefault();
+        logViolation("dev_tools_attempt");
+        return;
+      }
+
+      // Block copy
+      if ((e.ctrlKey || e.metaKey) && e.key === "c") {
+        e.preventDefault();
+        showViolationToast("Copying is disabled during the exam.");
+      }
+
+      // Block print screen
+      if (e.key === "PrintScreen") {
+        e.preventDefault();
+        showViolationToast("Screenshots are disabled during the exam.");
+      }
+    };
+
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, [logViolation]);
+
+  // ── RIGHT-CLICK prevention ────────────────────────────────────────────────
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      e.preventDefault();
+      showViolationToast("Right-click is disabled during the exam.");
+    };
+    document.addEventListener("contextmenu", handler);
+    return () => document.removeEventListener("contextmenu", handler);
   }, []);
 
-  // Anti-cheating: Tab visibility detection
+  // ── TEXT SELECTION prevention ─────────────────────────────────────────────
   useEffect(() => {
-    const handleVisibilityChange = () => {
-      if (document.hidden) {
-        setIsTabActive(false);
-        wasInactiveRef.current = true;
-      } else {
-        setIsTabActive(true);
-        if (wasInactiveRef.current && violations < 3) {
-          logViolation("tab_switch");
-          wasInactiveRef.current = false;
-        }
-      }
-    };
-
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
-  }, [violations]);
-
-  // Anti-cheating: Fullscreen exit detection
-  useEffect(() => {
-    const handleFullscreenChange = () => {
-      const isCurrentlyFullscreen = !!document.fullscreenElement;
-      setIsFullscreen(isCurrentlyFullscreen);
-
-      if (!isCurrentlyFullscreen && violations < 3) {
-        logViolation("exit_fullscreen");
-      }
-    };
-
-    document.addEventListener("fullscreenchange", handleFullscreenChange);
-    return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
-  }, [violations]);
-
-  // Anti-cheating: Right-click prevention
-  useEffect(() => {
-    const preventRightClick = (e: MouseEvent) => {
-      e.preventDefault();
-      showWarning("Right-click is disabled during the exam");
-    };
-
-    const preventKeyboardShortcuts = (e: KeyboardEvent) => {
-      // Prevent common cheating shortcuts
-      if (
-        e.key === "F12" || // Dev tools
-        (e.ctrlKey && e.shiftKey && e.key === "I") || // Dev tools
-        (e.ctrlKey && e.shiftKey && e.key === "J") || // Console
-        (e.ctrlKey && e.key === "u") || // View source
-        (e.ctrlKey && e.shiftKey && e.key === "C") || // Inspect element
-        (e.metaKey && e.altKey && e.key === "i") || // Mac dev tools
-        (e.metaKey && e.altKey && e.key === "j") // Mac console
-      ) {
-        e.preventDefault();
-        if (violations < 3) {
-          logViolation("dev_tools_attempt");
-        }
-      }
-
-      // Prevent copy (but allow paste for answers)
-      if (e.ctrlKey && e.key === "c") {
-        e.preventDefault();
-        showWarning("Copying is disabled during the exam");
-      }
-    };
-
-    document.addEventListener("contextmenu", preventRightClick);
-    document.addEventListener("keydown", preventKeyboardShortcuts);
-
+    const handler = (e: Event) => e.preventDefault();
+    document.addEventListener("selectstart", handler);
+    document.addEventListener("dragstart", handler);
     return () => {
-      document.removeEventListener("contextmenu", preventRightClick);
-      document.removeEventListener("keydown", preventKeyboardShortcuts);
+      document.removeEventListener("selectstart", handler);
+      document.removeEventListener("dragstart", handler);
     };
-  }, [violations]);
+  }, []);
 
-  // Anti-cheating: Blur detection (leaving window)
-  useEffect(() => {
-    const handleBlur = () => {
-      if (violations < 3) {
-        logViolation("window_blur");
-      }
-    };
-
-    window.addEventListener("blur", handleBlur);
-    return () => window.removeEventListener("blur", handleBlur);
-  }, [violations]);
-
-  const requestFullscreen = () => {
-    if (pageRef.current && !document.fullscreenElement) {
-      pageRef.current.requestFullscreen().catch((err) => {
-        console.error("Error attempting to enable fullscreen:", err);
-      });
-    }
-  };
-
-  const showWarning = (message: string) => {
-    setViolationMessage(message);
-    setShowViolationWarning(true);
-    setTimeout(() => setShowViolationWarning(false), 3000);
-  };
-
-  const logViolation = async (violationType: string) => {
-    if (!examSessionId) return;
-
-    try {
-      const response = await fetch("/api/exams/log-violation", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          examSessionId,
-          userId: user?.id,
-          violationType,
-          timestamp: new Date(),
-        }),
-      });
-
-      const data = await response.json();
-
-      if (response.ok) {
-        setViolations(data.violationCount);
-        setViolationMessage(data.message);
-        setShowViolationWarning(true);
-
-        setTimeout(() => setShowViolationWarning(false), 5000);
-
-        // Auto-submit if violations reached limit
-        if (data.shouldAutoSubmit) {
-          setTimeout(() => {
-            handleSubmit(true); // Force submit
-          }, 3000);
-        }
-      }
-    } catch (error) {
-      console.error("Error logging violation:", error);
-    }
-  };
-
+  // ── API CALLS ──────────────────────────────────────────────────────────────
   const startExam = async () => {
     try {
       setLoading(true);
-      const response = await fetch("/api/exams/start", {
+      const res  = await fetch("/api/exams/start", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          course,
-          subject,
-          area,
-          userId: user?.id,
-          questionCount: 50,
-        }),
+        body: JSON.stringify({ course, subject, area, userId: user?.id, questionCount: 50 }),
       });
-
-      const data = await response.json();
-
-      if (response.ok) {
+      const data = await res.json();
+      if (res.ok) {
         setQuestions(data.questions);
         setExamSessionId(data.examSessionId);
+        examSessionIdRef.current = data.examSessionId;
       } else {
         alert(data.error || "Failed to start exam");
         router.back();
       }
-    } catch (error) {
-      console.error("Error starting exam:", error);
+    } catch {
       alert("Failed to start exam");
       router.back();
     } finally {
@@ -241,249 +252,223 @@ export default function TakeExamPage() {
     }
   };
 
-  const handleAnswerSelect = (answer: string) => {
-    const currentQuestion = questions[currentIndex];
-    setAnswers({
-      ...answers,
-      [currentQuestion._id]: answer,
-    });
-  };
-
-  const handleNext = () => {
-    if (currentIndex < questions.length - 1) {
-      setCurrentIndex(currentIndex + 1);
-    }
-  };
-
-  const handlePrevious = () => {
-    if (currentIndex > 0) {
-      setCurrentIndex(currentIndex - 1);
-    }
-  };
-
-  const toggleFlag = () => {
-    const newFlagged = new Set(flagged);
-    if (newFlagged.has(currentIndex)) {
-      newFlagged.delete(currentIndex);
-    } else {
-      newFlagged.add(currentIndex);
-    }
-    setFlagged(newFlagged);
-  };
-
-  const handleSubmit = async (forceSubmit = false) => {
-    if (!examSessionId) return;
-
-    if (!forceSubmit) {
-      const unansweredCount = questions.length - Object.keys(answers).length;
-      if (unansweredCount > 0) {
-        const confirmed = confirm(
-          `You have ${unansweredCount} unanswered question(s). Submit anyway?`
-        );
-        if (!confirmed) return;
-      }
-    }
-
+  const forceSubmit = useCallback(async () => {
+    const sessionId = examSessionIdRef.current;
+    if (!sessionId) return;
     try {
       setSubmitting(true);
-      const response = await fetch("/api/exams/submit", {
+      const res = await fetch("/api/exams/submit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          examSessionId,
-          answers,
-          userId: user?.id,
-        }),
+        body: JSON.stringify({ examSessionId: sessionId, answers, userId: user?.id }),
       });
-
-      const data = await response.json();
-
-      if (response.ok) {
-        // Exit fullscreen before navigating
-        if (document.fullscreenElement) {
-          document.exitFullscreen();
-        }
-        router.push(`/student/exams/results/${examSessionId}`);
+      const data = await res.json();
+      if (res.ok) {
+        if (document.fullscreenElement) await document.exitFullscreen();
+        router.push(`/student/exams/results/${sessionId}`);
       } else {
         alert(data.error || "Failed to submit exam");
       }
-    } catch (error) {
-      console.error("Error submitting exam:", error);
+    } catch {
       alert("Failed to submit exam");
     } finally {
       setSubmitting(false);
     }
-  };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [answers, user?.id]);
 
-  const formatTime = (seconds: number) => {
-    const hours = Math.floor(seconds / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
-    const secs = seconds % 60;
-
-    if (hours > 0) {
-      return `${hours}:${minutes.toString().padStart(2, "0")}:${secs
-        .toString()
-        .padStart(2, "0")}`;
+  const handleSubmit = async (force = false) => {
+    if (!force) {
+      const unanswered = questions.length - Object.keys(answers).length;
+      if (unanswered > 0 && !confirm(`You have ${unanswered} unanswered question(s). Submit anyway?`)) return;
     }
-    return `${minutes}:${secs.toString().padStart(2, "0")}`;
+    await forceSubmit();
   };
 
-  const getAnsweredCount = () => Object.keys(answers).length;
-  const getFlaggedCount = () => flagged.size;
+  // ── HELPERS ────────────────────────────────────────────────────────────────
+  const handleAnswerSelect = (answer: string) => {
+    setAnswers(prev => ({ ...prev, [questions[currentIndex]._id]: answer }));
+  };
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-screen bg-gray-900">
-        <div className="text-center">
-          <Loader2 className="animate-spin text-white mx-auto mb-4" size={48} />
-          <p className="text-white font-bold">Loading exam...</p>
-        </div>
-      </div>
-    );
-  }
+  const toggleFlag = () => {
+    setFlagged(prev => {
+      const next = new Set(prev);
+      next.has(currentIndex) ? next.delete(currentIndex) : next.add(currentIndex);
+      return next;
+    });
+  };
 
-  if (questions.length === 0) {
-    return (
-      <div className="flex items-center justify-center h-screen">
-        <div className="text-center">
-          <AlertCircle size={48} className="text-red-500 mx-auto mb-4" />
-          <p className="text-lg font-bold text-gray-900">No questions available</p>
-          <button
-            onClick={() => router.back()}
-            className="mt-4 px-6 py-2 bg-[#7d1a1a] text-white rounded-lg font-bold"
-          >
-            Go Back
-          </button>
-        </div>
+  const formatTime = (s: number) => {
+    const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+    return h > 0
+      ? `${h}:${String(m).padStart(2,"0")}:${String(sec).padStart(2,"0")}`
+      : `${String(m).padStart(2,"0")}:${String(sec).padStart(2,"0")}`;
+  };
+
+  const violationBg = ["bg-emerald-100","bg-yellow-100","bg-orange-100","bg-red-100"];
+  const violationTx = ["text-emerald-600","text-yellow-600","text-orange-600","text-red-600"];
+  const violationHd = ["text-emerald-900","text-yellow-900","text-orange-900","text-red-900"];
+  const vIdx = Math.min(violations, 3);
+
+  // ── LOADING / EMPTY STATES ─────────────────────────────────────────────────
+  if (loading) return (
+    <div className="flex items-center justify-center h-screen bg-gray-900">
+      <div className="text-center">
+        <Loader2 className="animate-spin text-white mx-auto mb-4" size={48} />
+        <p className="text-white font-bold text-lg">Preparing your exam…</p>
+        <p className="text-gray-400 text-sm mt-1">Please wait</p>
       </div>
-    );
-  }
+    </div>
+  );
+
+  if (questions.length === 0) return (
+    <div className="flex items-center justify-center h-screen">
+      <div className="text-center">
+        <AlertCircle size={48} className="text-red-500 mx-auto mb-4" />
+        <p className="text-lg font-bold text-gray-900">No questions available</p>
+        <button onClick={() => router.back()} className="mt-4 px-6 py-2 bg-[#7d1a1a] text-white rounded-lg font-bold">Go Back</button>
+      </div>
+    </div>
+  );
 
   const currentQuestion = questions[currentIndex];
-  const currentAnswer = answers[currentQuestion._id];
-  const isFlagged = flagged.has(currentIndex);
+  const currentAnswer   = answers[currentQuestion._id];
+  const isFlagged       = flagged.has(currentIndex);
 
   return (
-    <div ref={pageRef} className="min-h-screen bg-gray-50 flex flex-col select-none">
-      {/* VIOLATION WARNING OVERLAY */}
+    <div ref={pageRef} className="min-h-screen flex flex-col select-none bg-gray-50">
+
+      {/* ── FULLSCREEN BLOCK OVERLAY ────────────────────────────────────────── */}
+      {showFullscreenBlock && (
+        <div className="fixed inset-0 z-[999] bg-black flex flex-col items-center justify-center text-white text-center p-6">
+          <div className="bg-red-600 p-5 rounded-full mb-6">
+            <Lock size={48} />
+          </div>
+          <h2 className="text-2xl sm:text-3xl font-black mb-3">Fullscreen Required</h2>
+          <p className="text-white/70 text-sm sm:text-base max-w-md mb-2">
+            You exited fullscreen mode. A violation has been recorded.
+          </p>
+          <p className="text-white/50 text-xs sm:text-sm max-w-md mb-8">
+            Violations remaining: <span className="font-black text-red-400">{3 - violations}</span>. 
+            After 3 violations your exam will be auto-submitted.
+          </p>
+          <button
+            onClick={enterFullscreen}
+            className="flex items-center gap-3 px-8 py-4 bg-[#7d1a1a] hover:bg-[#5a1313] rounded-2xl font-black text-lg transition-all active:scale-95 shadow-2xl shadow-[#7d1a1a]/40"
+          >
+            <Maximize size={22} />
+            Re-enter Fullscreen to Continue
+          </button>
+        </div>
+      )}
+
+      {/* ── AUTO-SUBMIT OVERLAY ──────────────────────────────────────────────── */}
+      {autoSubmitting && (
+        <div className="fixed inset-0 z-[998] bg-black/90 flex flex-col items-center justify-center text-white text-center p-6">
+          <div className="bg-red-600 p-5 rounded-full mb-6 animate-pulse">
+            <AlertTriangle size={48} />
+          </div>
+          <h2 className="text-2xl font-black mb-3">Maximum Violations Reached</h2>
+          <p className="text-white/70 mb-6">Your exam is being submitted automatically…</p>
+          <Loader2 className="animate-spin" size={36} />
+        </div>
+      )}
+
+      {/* ── VIOLATION TOAST ──────────────────────────────────────────────────── */}
       {showViolationWarning && (
-        <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 animate-in slide-in-from-top duration-300">
-          <div className="bg-red-600 text-white px-6 py-4 rounded-xl shadow-2xl flex items-center gap-3 max-w-md">
-            <AlertTriangle size={24} className="flex-shrink-0" />
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 animate-in slide-in-from-top duration-300 w-full max-w-sm px-4">
+          <div className="bg-red-600 text-white px-5 py-4 rounded-2xl shadow-2xl flex items-start gap-3">
+            <AlertTriangle size={22} className="flex-shrink-0 mt-0.5" />
             <div>
-              <p className="font-bold text-sm">Violation Warning!</p>
-              <p className="text-xs mt-1">{violationMessage}</p>
+              <p className="font-bold text-sm">Violation Recorded!</p>
+              <p className="text-xs mt-1 text-white/80 leading-relaxed">{violationMessage}</p>
             </div>
           </div>
         </div>
       )}
 
-      {/* HEADER */}
+      {/* ── HEADER ───────────────────────────────────────────────────────────── */}
       <div className="bg-white border-b border-gray-200 px-4 py-3 sticky top-0 z-10 shadow-sm">
-        <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3 flex-1 min-w-0">
-            <div className="p-2 bg-[#7d1a1a]/10 rounded-lg">
+        <div className="max-w-7xl mx-auto flex items-center justify-between gap-3 flex-wrap">
+          {/* Left: subject */}
+          <div className="flex items-center gap-3 min-w-0 flex-1">
+            <div className="p-2 bg-[#7d1a1a]/10 rounded-lg flex-shrink-0">
               <BookOpen size={18} className="text-[#7d1a1a]" />
             </div>
             <div className="min-w-0">
-              <h1 className="text-sm sm:text-base font-bold text-gray-900 truncate">
-                {subject}
-              </h1>
+              <h1 className="text-sm sm:text-base font-bold text-gray-900 truncate">{subject}</h1>
               {area && <p className="text-xs text-gray-500 truncate">{area}</p>}
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
-            {/* VIOLATION INDICATOR */}
-            <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg ${
-              violations === 0 ? "bg-emerald-100" :
-              violations === 1 ? "bg-yellow-100" :
-              violations === 2 ? "bg-orange-100" :
-              "bg-red-100"
-            }`}>
-              <Shield size={16} className={
-                violations === 0 ? "text-emerald-600" :
-                violations === 1 ? "text-yellow-600" :
-                violations === 2 ? "text-orange-600" :
-                "text-red-600"
-              } />
-              <span className={`text-xs font-bold ${
-                violations === 0 ? "text-emerald-900" :
-                violations === 1 ? "text-yellow-900" :
-                violations === 2 ? "text-orange-900" :
-                "text-red-900"
-              }`}>
-                {violations}/3 Violations
-              </span>
+          {/* Right: indicators */}
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {/* Fullscreen indicator */}
+            <div className={`hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold ${isFullscreen ? "bg-emerald-100 text-emerald-800" : "bg-red-100 text-red-800"}`}>
+              <Maximize size={14} />
+              {isFullscreen ? "Fullscreen" : "Not Fullscreen"}
             </div>
 
-            {/* TIMER */}
-            <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-100 rounded-lg">
-              <Clock size={16} className="text-gray-600" />
-              <span className="text-sm font-bold text-gray-900">
-                {formatTime(timeElapsed)}
-              </span>
+            {/* Violations */}
+            <div className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg ${violationBg[vIdx]}`}>
+              <Shield size={15} className={violationTx[vIdx]} />
+              <span className={`text-xs font-black ${violationHd[vIdx]}`}>{violations}/3</span>
             </div>
 
-            {/* SUBMIT BUTTON */}
+            {/* Timer */}
+            <div className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 rounded-lg">
+              <Clock size={15} className="text-gray-600" />
+              <span className="text-sm font-black text-gray-900 tabular-nums">{formatTime(timeElapsed)}</span>
+            </div>
+
+            {/* Submit */}
             <button
               onClick={() => setShowSubmitConfirm(true)}
               disabled={submitting}
               className="px-4 py-2 bg-emerald-600 text-white rounded-lg font-bold text-sm hover:bg-emerald-700 transition-all disabled:opacity-50"
             >
-              {submitting ? "Submitting..." : "Submit"}
+              {submitting ? "Submitting…" : "Submit"}
             </button>
           </div>
         </div>
       </div>
 
-      {/* ANTI-CHEATING STATUS BAR */}
-      {!isTabActive && (
-        <div className="bg-red-600 text-white px-4 py-2 text-center text-sm font-bold">
-          ⚠️ RETURN TO THE EXAM TAB IMMEDIATELY - Violations are being logged
-        </div>
-      )}
-
-      {/* MAIN CONTENT */}
+      {/* ── MAIN ─────────────────────────────────────────────────────────────── */}
       <div className="flex-1 max-w-7xl mx-auto w-full p-4 sm:p-6 lg:p-8">
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+
           {/* QUESTION PANEL */}
           <div className="lg:col-span-3 space-y-4">
-            {/* ANTI-CHEATING NOTICE */}
+
+            {/* Anti-cheat notice */}
             <div className="bg-amber-50 border-2 border-amber-200 rounded-xl p-4">
               <div className="flex items-start gap-3">
                 <Eye size={20} className="text-amber-600 flex-shrink-0 mt-0.5" />
-                <div className="flex-1">
-                  <p className="text-sm font-bold text-amber-900 mb-1">
-                    Anti-Cheating System Active
-                  </p>
-                  <ul className="text-xs text-amber-800 space-y-1">
-                    <li>• Switching tabs or windows will be logged as a violation</li>
-                    <li>• Exiting fullscreen will be logged as a violation</li>
-                    <li>• After 3 violations, your exam will auto-submit</li>
-                    <li>• Stay focused on this exam window only</li>
+                <div>
+                  <p className="text-sm font-black text-amber-900 mb-1">Anti-Cheating System Active</p>
+                  <ul className="text-xs text-amber-800 space-y-1 leading-relaxed">
+                    <li>• Exiting fullscreen is a violation</li>
+                    <li>• Switching tabs or apps is a violation</li>
+                    <li>• Right-click, copy, and print screen are disabled</li>
+                    <li>• After <strong>3 violations</strong>, your exam auto-submits</li>
                   </ul>
                 </div>
               </div>
             </div>
 
-            {/* QUESTION CARD */}
+            {/* Question card */}
             <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
               <div className="flex items-start justify-between gap-4 mb-4">
                 <div className="flex-1">
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="px-2 py-1 bg-gray-100 text-gray-700 rounded-md text-xs font-bold">
-                      Question {currentIndex + 1} of {questions.length}
+                  <div className="flex flex-wrap items-center gap-2 mb-3">
+                    <span className="px-2.5 py-1 bg-gray-100 text-gray-700 rounded-lg text-xs font-bold">
+                      {currentIndex + 1} / {questions.length}
                     </span>
-                    <span
-                      className={`px-2 py-1 rounded-md text-xs font-bold ${
-                        currentQuestion.difficulty === "Easy"
-                          ? "bg-green-100 text-green-700"
-                          : currentQuestion.difficulty === "Medium"
-                          ? "bg-yellow-100 text-yellow-700"
-                          : "bg-red-100 text-red-700"
-                      }`}
-                    >
+                    <span className={`px-2.5 py-1 rounded-lg text-xs font-bold ${
+                      currentQuestion.difficulty === "Easy"   ? "bg-green-100 text-green-700" :
+                      currentQuestion.difficulty === "Medium" ? "bg-yellow-100 text-yellow-700" :
+                                                                "bg-red-100 text-red-700"
+                    }`}>
                       {currentQuestion.difficulty}
                     </span>
                   </div>
@@ -494,48 +479,34 @@ export default function TakeExamPage() {
 
                 <button
                   onClick={toggleFlag}
-                  className={`p-2 rounded-lg transition-all flex-shrink-0 ${
-                    isFlagged
-                      ? "bg-amber-100 text-amber-600"
-                      : "bg-gray-100 text-gray-400 hover:bg-gray-200"
-                  }`}
-                  title={isFlagged ? "Unflag question" : "Flag for review"}
+                  className={`p-2 rounded-lg transition-all flex-shrink-0 ${isFlagged ? "bg-amber-100 text-amber-600" : "bg-gray-100 text-gray-400 hover:bg-gray-200"}`}
+                  title={isFlagged ? "Unflag" : "Flag for review"}
                 >
                   <Flag size={18} fill={isFlagged ? "currentColor" : "none"} />
                 </button>
               </div>
 
-              {/* OPTIONS */}
-              <div className="space-y-3 mt-6">
-                {["A", "B", "C", "D"].map((option) => {
-                  const optionText = currentQuestion[`option${option}` as keyof Question];
-                  if (!optionText) return null;
-
-                  const isSelected = currentAnswer === option;
-
+              {/* Options */}
+              <div className="space-y-3 mt-4">
+                {["A","B","C","D"].map(opt => {
+                  const text = currentQuestion[`option${opt}` as keyof Question] as string | undefined;
+                  if (!text) return null;
+                  const sel = currentAnswer === opt;
                   return (
                     <button
-                      key={option}
-                      onClick={() => handleAnswerSelect(option)}
+                      key={opt}
+                      onClick={() => handleAnswerSelect(opt)}
                       className={`w-full p-4 rounded-xl border-2 text-left transition-all ${
-                        isSelected
-                          ? "border-[#7d1a1a] bg-[#7d1a1a]/5"
-                          : "border-gray-200 hover:border-gray-300 hover:bg-gray-50"
+                        sel ? "border-[#7d1a1a] bg-[#7d1a1a]/5 shadow-sm" : "border-gray-200 hover:border-gray-300 hover:bg-gray-50"
                       }`}
                     >
-                      <div className="flex items-start gap-3">
-                        <div
-                          className={`flex items-center justify-center w-8 h-8 rounded-full border-2 flex-shrink-0 ${
-                            isSelected
-                              ? "border-[#7d1a1a] bg-[#7d1a1a] text-white"
-                              : "border-gray-300 text-gray-600"
-                          }`}
-                        >
-                          <span className="text-sm font-bold">{option}</span>
+                      <div className="flex items-center gap-3">
+                        <div className={`flex items-center justify-center w-8 h-8 rounded-full border-2 flex-shrink-0 text-sm font-black transition-all ${
+                          sel ? "border-[#7d1a1a] bg-[#7d1a1a] text-white" : "border-gray-300 text-gray-600"
+                        }`}>
+                          {opt}
                         </div>
-                        <p className="flex-1 text-sm sm:text-base text-gray-900 font-medium">
-                          {optionText as string}
-                        </p>
+                        <p className="flex-1 text-sm sm:text-base text-gray-900 font-medium">{text}</p>
                       </div>
                     </button>
                   );
@@ -543,143 +514,124 @@ export default function TakeExamPage() {
               </div>
             </div>
 
-            {/* NAVIGATION */}
-            <div className="flex items-center justify-between gap-4">
+            {/* Navigation */}
+            <div className="flex items-center justify-between">
               <button
-                onClick={handlePrevious}
+                onClick={() => setCurrentIndex(p => Math.max(0, p - 1))}
                 disabled={currentIndex === 0}
-                className="flex items-center gap-2 px-4 py-2.5 bg-white border border-gray-200 rounded-xl font-bold text-sm text-gray-700 hover:bg-gray-50 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex items-center gap-2 px-4 py-2.5 bg-white border border-gray-200 rounded-xl font-bold text-sm text-gray-700 hover:bg-gray-50 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
               >
-                <ChevronLeft size={18} />
-                Previous
+                <ChevronLeft size={18} /> Previous
               </button>
-
+              <span className="text-sm text-gray-500 font-medium">
+                {Object.keys(answers).length}/{questions.length} answered
+              </span>
               <button
-                onClick={handleNext}
+                onClick={() => setCurrentIndex(p => Math.min(questions.length - 1, p + 1))}
                 disabled={currentIndex === questions.length - 1}
-                className="flex items-center gap-2 px-4 py-2.5 bg-[#7d1a1a] text-white rounded-xl font-bold text-sm hover:bg-[#5a1313] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex items-center gap-2 px-4 py-2.5 bg-[#7d1a1a] text-white rounded-xl font-bold text-sm hover:bg-[#5a1313] transition-all disabled:opacity-40 disabled:cursor-not-allowed"
               >
-                Next
-                <ChevronRight size={18} />
+                Next <ChevronRight size={18} />
               </button>
             </div>
           </div>
 
-          {/* SIDEBAR - QUESTION NAVIGATOR */}
+          {/* SIDEBAR */}
           <div className="lg:col-span-1">
-            <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-4 sticky top-24">
-              <h3 className="text-sm font-black text-gray-900 mb-4">
-                Question Overview
-              </h3>
+            <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-4 sticky top-24 space-y-4">
+              <h3 className="text-sm font-black text-gray-900">Question Overview</h3>
 
-              <div className="grid grid-cols-5 gap-2 mb-4">
-                {questions.map((_, index) => {
-                  const isAnswered = answers[questions[index]._id];
-                  const isFlaggedQ = flagged.has(index);
-                  const isCurrent = index === currentIndex;
-
+              <div className="grid grid-cols-5 gap-1.5">
+                {questions.map((_, idx) => {
+                  const answered  = !!answers[questions[idx]._id];
+                  const flaggedQ  = flagged.has(idx);
+                  const isCurrent = idx === currentIndex;
                   return (
                     <button
-                      key={index}
-                      onClick={() => setCurrentIndex(index)}
-                      className={`aspect-square flex items-center justify-center rounded-lg text-xs font-bold transition-all ${
-                        isCurrent
-                          ? "bg-[#7d1a1a] text-white ring-2 ring-[#7d1a1a] ring-offset-2"
-                          : isAnswered
-                          ? "bg-emerald-100 text-emerald-700"
-                          : isFlaggedQ
-                          ? "bg-amber-100 text-amber-700"
-                          : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                      key={idx}
+                      onClick={() => setCurrentIndex(idx)}
+                      className={`aspect-square flex items-center justify-center rounded-lg text-[11px] font-bold transition-all ${
+                        isCurrent  ? "bg-[#7d1a1a] text-white ring-2 ring-[#7d1a1a] ring-offset-1" :
+                        answered   ? "bg-emerald-100 text-emerald-700" :
+                        flaggedQ   ? "bg-amber-100 text-amber-700" :
+                                     "bg-gray-100 text-gray-600 hover:bg-gray-200"
                       }`}
                     >
-                      {index + 1}
+                      {idx + 1}
                     </button>
                   );
                 })}
               </div>
 
-              <div className="space-y-2 text-xs">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <CheckCircle size={14} className="text-emerald-600" />
-                    <span className="text-gray-600">Answered</span>
+              {/* Legend */}
+              <div className="space-y-2 pt-2 border-t border-gray-100">
+                {[
+                  { color: "bg-emerald-100", label: "Answered",    count: Object.keys(answers).length },
+                  { color: "bg-amber-100",   label: "Flagged",     count: flagged.size },
+                  { color: "bg-gray-100",    label: "Unanswered",  count: questions.length - Object.keys(answers).length },
+                ].map(row => (
+                  <div key={row.label} className="flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-2">
+                      <span className={`w-3 h-3 rounded ${row.color}`} />
+                      <span className="text-gray-600">{row.label}</span>
+                    </div>
+                    <span className="font-black text-gray-900">{row.count}</span>
                   </div>
-                  <span className="font-bold text-gray-900">
-                    {getAnsweredCount()}/{questions.length}
+                ))}
+              </div>
+
+              {/* Violation status */}
+              <div className={`mt-2 rounded-xl p-3 ${violationBg[vIdx]}`}>
+                <div className="flex items-center gap-2 mb-1">
+                  <Shield size={14} className={violationTx[vIdx]} />
+                  <span className={`text-xs font-black ${violationHd[vIdx]}`}>
+                    {violations === 0 ? "No Violations" : `${violations} Violation${violations > 1 ? "s" : ""}`}
                   </span>
                 </div>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Flag size={14} className="text-amber-600" />
-                    <span className="text-gray-600">Flagged</span>
-                  </div>
-                  <span className="font-bold text-gray-900">
-                    {getFlaggedCount()}
-                  </span>
+                <div className="flex gap-1.5">
+                  {[0,1,2].map(i => (
+                    <div key={i} className={`flex-1 h-1.5 rounded-full ${i < violations ? "bg-red-500" : "bg-gray-200"}`} />
+                  ))}
                 </div>
+                <p className={`text-[10px] mt-1.5 ${violationTx[vIdx]}`}>
+                  {violations === 0 ? "Stay focused!" : violations >= 3 ? "Submitting…" : `${3 - violations} remaining before auto-submit`}
+                </p>
               </div>
             </div>
           </div>
         </div>
       </div>
 
-      {/* SUBMIT CONFIRMATION MODAL */}
+      {/* ── SUBMIT MODAL ─────────────────────────────────────────────────────── */}
       {showSubmitConfirm && (
         <>
-          <div
-            className="fixed inset-0 bg-black/50 z-40 backdrop-blur-sm"
-            onClick={() => setShowSubmitConfirm(false)}
-          />
+          <div className="fixed inset-0 bg-black/60 z-40 backdrop-blur-sm" onClick={() => setShowSubmitConfirm(false)} />
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6">
-              <h3 className="text-xl font-black text-gray-900 mb-4">
-                Submit Exam?
-              </h3>
-              <div className="space-y-3 mb-6">
-                <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                  <span className="text-sm text-gray-600">Total Questions</span>
-                  <span className="text-sm font-bold text-gray-900">
-                    {questions.length}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between p-3 bg-emerald-50 rounded-lg">
-                  <span className="text-sm text-emerald-700">Answered</span>
-                  <span className="text-sm font-bold text-emerald-900">
-                    {getAnsweredCount()}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between p-3 bg-red-50 rounded-lg">
-                  <span className="text-sm text-red-700">Unanswered</span>
-                  <span className="text-sm font-bold text-red-900">
-                    {questions.length - getAnsweredCount()}
-                  </span>
-                </div>
-                {violations > 0 && (
-                  <div className="flex items-center justify-between p-3 bg-orange-50 rounded-lg">
-                    <span className="text-sm text-orange-700">Violations</span>
-                    <span className="text-sm font-bold text-orange-900">
-                      {violations}
-                    </span>
+              <h3 className="text-xl font-black text-gray-900 mb-5">Submit Exam?</h3>
+              <div className="space-y-2.5 mb-6">
+                {[
+                  { label: "Total Questions", value: questions.length, bg: "bg-gray-50", tx: "text-gray-900", lx: "text-gray-600" },
+                  { label: "Answered",        value: Object.keys(answers).length, bg: "bg-emerald-50", tx: "text-emerald-900", lx: "text-emerald-700" },
+                  { label: "Unanswered",      value: questions.length - Object.keys(answers).length, bg: "bg-red-50", tx: "text-red-900", lx: "text-red-700" },
+                  ...(violations > 0 ? [{ label: "Violations", value: violations, bg: "bg-orange-50", tx: "text-orange-900", lx: "text-orange-700" }] : []),
+                ].map(row => (
+                  <div key={row.label} className={`flex items-center justify-between p-3 ${row.bg} rounded-xl`}>
+                    <span className={`text-sm ${row.lx}`}>{row.label}</span>
+                    <span className={`text-sm font-black ${row.tx}`}>{row.value}</span>
                   </div>
-                )}
+                ))}
               </div>
-              <p className="text-sm text-gray-600 mb-6">
-                Once submitted, you cannot change your answers. Are you sure you
-                want to continue?
+              <p className="text-sm text-gray-500 mb-6 leading-relaxed">
+                Once submitted, you cannot change your answers. Make sure you've answered as many questions as possible.
               </p>
               <div className="flex gap-3">
-                <button
-                  onClick={() => setShowSubmitConfirm(false)}
-                  className="flex-1 px-4 py-2.5 border border-gray-200 text-gray-700 rounded-xl font-bold hover:bg-gray-50 transition-all"
-                >
-                  Cancel
+                <button onClick={() => setShowSubmitConfirm(false)} className="flex-1 px-4 py-3 border border-gray-200 text-gray-700 rounded-xl font-bold hover:bg-gray-50 transition-all">
+                  Keep Answering
                 </button>
-                <button
-                  onClick={() => handleSubmit(false)}
-                  disabled={submitting}
-                  className="flex-1 px-4 py-2.5 bg-emerald-600 text-white rounded-xl font-bold hover:bg-emerald-700 transition-all disabled:opacity-50"
-                >
-                  {submitting ? "Submitting..." : "Submit"}
+                <button onClick={() => { setShowSubmitConfirm(false); handleSubmit(false); }} disabled={submitting}
+                  className="flex-1 px-4 py-3 bg-emerald-600 text-white rounded-xl font-bold hover:bg-emerald-700 transition-all disabled:opacity-50">
+                  {submitting ? "Submitting…" : "Submit Now"}
                 </button>
               </div>
             </div>
