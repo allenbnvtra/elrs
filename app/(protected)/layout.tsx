@@ -20,18 +20,33 @@ import {
   ChevronDown,
   User,
   GraduationCap,
+  FileQuestion,
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/authContext";
 
+interface NavItem {
+  label: string;
+  icon: any;
+  href: string;
+  id?: string;
+  expandable?: boolean;
+  subItems?: NavItem[];
+}
+
+interface NavGroup {
+  label: string;
+  items: NavItem[];
+}
+
 /**
- * Modern Protected Layout - Fully Responsive (Down to 320px)
- * Features: Fixed Maroon Sidebar, Glassmorphism Header, Mobile-First Design
- * With Expandable Questions Sub-Menu
+ * Dynamic Protected Layout - Fully Responsive (Down to 320px)
+ * Features: Role-Based Navigation, Fixed Maroon Sidebar, Glassmorphism Header
+ * Supports: Admin, Faculty, Student roles
  */
-export default function AdminLayout({
+export default function ProtectedLayout({
   children,
 }: {
   children: React.ReactNode;
@@ -51,14 +66,17 @@ export default function AdminLayout({
     }
   }, [isLoading, isAuthenticated, router]);
 
-  // Auto-expand Questions menu if on BSABE or BSGE questions page
+  // Auto-expand Questions menu if on BSABE or BSGE questions page (Admin only)
   useEffect(() => {
-    if (pathname?.includes("/questions/bsaben") || pathname?.includes("questions/bsge")) {
+    if (
+      user?.role === "admin" &&
+      (pathname?.includes("/questions/bsaben") || pathname?.includes("/questions/bsge"))
+    ) {
       if (!expandedMenus.includes("questions")) {
         setExpandedMenus((prev) => [...prev, "questions"]);
       }
     }
-  }, [pathname]);
+  }, [pathname, user?.role]);
 
   // Get user initials
   const getUserInitials = (name: string) => {
@@ -85,55 +103,125 @@ export default function AdminLayout({
     bgSidebar: "linear-gradient(180deg, #5a1313 0%, #3d0d0d 100%)",
   };
 
-  const navGroups = [
-    {
-      label: "Core",
-      items: [
-        { label: "Dashboard", icon: LayoutDashboard, href: "/admin/dashboard" },
-        {
-          label: "Review Materials",
-          icon: BookOpen,
-          href: "/admin/review-materials",
-        },
-        { 
-          label: "Questions", 
-          icon: HelpCircle, 
-          href: "/admin/questions",
-          id: "questions",
-          expandable: true,
-          subItems: [
-            { label: "BSABEN", icon: GraduationCap, href: "/admin/questions/bsaben" },
-            { label: "BSGE", icon: GraduationCap, href: "/admin/questions/bsge" },
-          ]
-        },
-      ],
-    },
-    {
-      label: "Management",
-      items: [
-        {
-          label: "Student Approval",
-          icon: UserCheck,
-          href: "/admin/student-approval",
-        },
-        {
-          label: "Coordinator Status",
-          icon: UserPlus,
-          href: "/admin/coordinators",
-        },
-        { label: "Student Info", icon: Users, href: "/admin/student-info" },
-      ],
-    },
-    {
-      label: "Data & Systems",
-      items: [
-        { label: "Results", icon: BarChart3, href: "/admin/results" },
-        { label: "Scores", icon: ClipboardList, href: "/admin/scores" },
-        { label: "Archive", icon: Archive, href: "/admin/archive" },
-        { label: "Settings", icon: Settings, href: "/admin/settings" },
-      ],
-    },
-  ];
+  // Get navigation groups based on user role
+  const getNavGroups = (): NavGroup[] => {
+    if (!user) return [];
+
+    switch (user.role) {
+      case "admin":
+        return [
+          {
+            label: "Core",
+            items: [
+              { label: "Dashboard", icon: LayoutDashboard, href: "/admin/dashboard" },
+              { label: "Review Materials", icon: BookOpen, href: "/admin/review-materials" },
+              {
+                label: "Questions",
+                icon: HelpCircle,
+                href: "/admin/questions",
+                id: "questions",
+                expandable: true,
+                subItems: [
+                  { label: "BSABEN", icon: GraduationCap, href: "/admin/questions/bsaben" },
+                  { label: "BSGE", icon: GraduationCap, href: "/admin/questions/bsge" },
+                ],
+              },
+            ],
+          },
+          {
+            label: "Management",
+            items: [
+              { label: "Student Approval", icon: UserCheck, href: "/admin/student-approval" },
+              { label: "Coordinator Status", icon: UserPlus, href: "/admin/coordinators" },
+              { label: "Student Info", icon: Users, href: "/admin/student-info" },
+            ],
+          },
+          {
+            label: "Data & Systems",
+            items: [
+              { label: "Results", icon: BarChart3, href: "/admin/results" },
+              { label: "Scores", icon: ClipboardList, href: "/admin/scores" },
+              { label: "Archive", icon: Archive, href: "/admin/archive" },
+              { label: "Settings", icon: Settings, href: "/admin/settings" },
+            ],
+          },
+        ];
+
+      case "faculty":
+        return [
+          {
+            label: "Core",
+            items: [
+              { label: "Dashboard", icon: LayoutDashboard, href: "/faculty/dashboard" },
+              { label: "Review Materials", icon: BookOpen, href: "/faculty/review-materials" },
+              { label: "Questionnaires", icon: FileQuestion, href: "/faculty/questionnaires" },
+            ],
+          },
+          {
+            label: "Management",
+            items: [
+              { label: "Student Approval", icon: UserCheck, href: "/faculty/student-approval" },
+              { label: "Student Informations", icon: Users, href: "/faculty/student-informations" },
+            ],
+          },
+          {
+            label: "Data & Reports",
+            items: [
+              { label: "Results", icon: BarChart3, href: "/faculty/results" },
+              { label: "Scores", icon: ClipboardList, href: "/faculty/scores" },
+              { label: "Archive", icon: Archive, href: "/faculty/archive" },
+            ],
+          },
+          {
+            label: "System",
+            items: [{ label: "Settings", icon: Settings, href: "/faculty/settings" }],
+          },
+        ];
+
+      case "student":
+        return [
+          {
+            label: "Main",
+            items: [
+              { label: "Dashboard", icon: LayoutDashboard, href: "/student/dashboard" },
+              { label: "Review Materials", icon: BookOpen, href: "/student/review-materials" },
+              { label: "Exam", icon: ClipboardList, href: "/student/exams" },
+            ],
+          },
+          {
+            label: "Personal",
+            items: [
+              { label: "Records", icon: BarChart3, href: "/student/records" },
+              { label: "Settings", icon: Settings, href: "/student/settings" },
+            ],
+          },
+        ];
+
+      default:
+        return [];
+    }
+  };
+
+  // Get panel title based on role
+  const getPanelTitle = () => {
+    if (!user) return "PANEL";
+    switch (user.role) {
+      case "admin":
+        return "ADMIN PANEL";
+      case "faculty":
+        return "FACULTY PANEL";
+      case "student":
+        return "STUDENT PORTAL";
+      default:
+        return "PANEL";
+    }
+  };
+
+  // Get base path for current role
+  const getBasePath = () => {
+    if (!user) return "/";
+    return `/${user.role}`;
+  };
 
   const handleLogout = async () => {
     try {
@@ -155,7 +243,7 @@ export default function AdminLayout({
     );
   }
 
-  // If not authenticated, show loading while redirecting (useEffect will handle redirect)
+  // If not authenticated, show loading while redirecting
   if (!isAuthenticated || !user) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-[#f8f9fa]">
@@ -167,8 +255,8 @@ export default function AdminLayout({
     );
   }
 
-  // Check if user has admin role
-  if (user.role !== "admin") {
+  // Check if user has valid role
+  if (!["admin", "faculty", "student"].includes(user.role)) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-[#f8f9fa]">
         <div className="text-center max-w-md p-8">
@@ -177,7 +265,7 @@ export default function AdminLayout({
           </div>
           <h1 className="text-2xl font-bold text-gray-900 mb-2">Access Denied</h1>
           <p className="text-gray-600 mb-6">
-            You don't have permission to access the admin panel.
+            You don't have permission to access this panel.
           </p>
           <button
             onClick={handleLogout}
@@ -189,6 +277,8 @@ export default function AdminLayout({
       </div>
     );
   }
+
+  const navGroups = getNavGroups();
 
   return (
     <div className="flex min-h-screen overflow-x-hidden">
@@ -209,9 +299,17 @@ export default function AdminLayout({
         `}
       >
         {/* Brand Section */}
-        <div className={`h-14 xs:h-16 sm:h-20 flex items-center ${isCollapsed ? "px-2 xs:px-3 lg:px-4" : "px-3 xs:px-4 sm:px-6"} border-b border-white/5 bg-black/20 flex-shrink-0`}>
+        <div
+          className={`h-14 xs:h-16 sm:h-20 flex items-center ${
+            isCollapsed ? "px-2 xs:px-3 lg:px-4" : "px-3 xs:px-4 sm:px-6"
+          } border-b border-white/5 bg-black/20 flex-shrink-0`}
+        >
           <div className="flex items-center gap-2 xs:gap-2 sm:gap-3 min-w-0">
-            <div className={`flex-shrink-0 ${isCollapsed ? "w-7 h-7 xs:w-8 xs:h-8" : "w-7 h-7 xs:w-8 xs:h-8 sm:w-9 sm:h-9"} bg-white rounded-lg sm:rounded-xl flex items-center justify-center shadow-lg transform rotate-3`}>
+            <div
+              className={`flex-shrink-0 ${
+                isCollapsed ? "w-7 h-7 xs:w-8 xs:h-8" : "w-7 h-7 xs:w-8 xs:h-8 sm:w-9 sm:h-9"
+              } bg-white rounded-lg sm:rounded-xl flex items-center justify-center shadow-lg transform rotate-3`}
+            >
               <Image
                 src="/basc_logo.png"
                 alt="Logo"
@@ -226,12 +324,12 @@ export default function AdminLayout({
                   BSAU ELRS
                 </span>
                 <span className="text-[8px] xs:text-[9px] sm:text-[10px] text-white/50 font-medium tracking-[0.12em] xs:tracking-[0.15em] sm:tracking-[0.2em] uppercase truncate">
-                  ADMIN PANEL
+                  {getPanelTitle()}
                 </span>
               </div>
             )}
           </div>
-          
+
           {/* Close button for mobile */}
           <button
             onClick={() => setIsMobileOpen(false)}
@@ -242,26 +340,39 @@ export default function AdminLayout({
         </div>
 
         {/* Navigation Area */}
-        <nav className={`flex-1 py-3 xs:py-4 sm:py-6 lg:py-8 overflow-y-auto no-scrollbar ${isCollapsed ? "px-2" : "px-2 xs:px-3"} space-y-3 xs:space-y-4 sm:space-y-6 lg:space-y-8`}>
+        <nav
+          className={`flex-1 py-3 xs:py-4 sm:py-6 lg:py-8 overflow-y-auto no-scrollbar ${
+            isCollapsed ? "px-2" : "px-2 xs:px-3"
+          } space-y-3 xs:space-y-4 sm:space-y-6 lg:space-y-8`}
+        >
           {navGroups.map((group) => (
             <div key={group.label}>
               {!isCollapsed && (
-                <p className={`px-2 xs:px-3 sm:px-4 text-[8px] xs:text-[9px] sm:text-[10px] font-bold text-white/30 uppercase tracking-[0.12em] xs:tracking-[0.15em] sm:tracking-[0.2em] mb-1.5 xs:mb-2 sm:mb-3 lg:mb-4 truncate`}>
+                <p
+                  className={`px-2 xs:px-3 sm:px-4 text-[8px] xs:text-[9px] sm:text-[10px] font-bold text-white/30 uppercase tracking-[0.12em] xs:tracking-[0.15em] sm:tracking-[0.2em] mb-1.5 xs:mb-2 sm:mb-3 lg:mb-4 truncate`}
+                >
                   {group.label}
                 </p>
               )}
               <div className="space-y-0.5 xs:space-y-1">
                 {group.items.map((item) => {
-                  const active = pathname === item.href || item.subItems?.some(sub => pathname === sub.href);
-                  const isExpanded = item.expandable && expandedMenus.includes(item.id || "");
-                  
+                  const active =
+                    pathname === item.href ||
+                    item.subItems?.some((sub) => pathname === sub.href);
+                  const isExpanded =
+                    item.expandable && expandedMenus.includes(item.id || "");
+
                   return (
                     <div key={item.href}>
                       {/* Main Menu Item */}
                       {item.expandable ? (
                         <button
                           onClick={() => toggleMenu(item.id || "")}
-                          className={`w-full flex items-center gap-2 xs:gap-2 sm:gap-3 ${isCollapsed ? "px-2 xs:px-3 justify-center" : "px-2 xs:px-3 sm:px-4"} py-2 xs:py-2.5 sm:py-3 lg:py-3.5 rounded-lg sm:rounded-xl transition-all duration-200 group relative cursor-pointer
+                          className={`w-full flex items-center gap-2 xs:gap-2 sm:gap-3 ${
+                            isCollapsed
+                              ? "px-2 xs:px-3 justify-center"
+                              : "px-2 xs:px-3 sm:px-4"
+                          } py-2 xs:py-2.5 sm:py-3 lg:py-3.5 rounded-lg sm:rounded-xl transition-all duration-200 group relative cursor-pointer
                             ${
                               active
                                 ? "bg-white text-[#7d1a1a] shadow-xl shadow-black/20"
@@ -271,7 +382,11 @@ export default function AdminLayout({
                         >
                           <item.icon
                             size={isCollapsed ? 16 : 18}
-                            className={`flex-shrink-0 xs:w-[18px] xs:h-[18px] sm:w-5 sm:h-5 ${active ? "text-[#7d1a1a]" : "group-hover:scale-110 transition-transform"}`}
+                            className={`flex-shrink-0 xs:w-[18px] xs:h-[18px] sm:w-5 sm:h-5 ${
+                              active
+                                ? "text-[#7d1a1a]"
+                                : "group-hover:scale-110 transition-transform"
+                            }`}
                           />
                           {!isCollapsed && (
                             <>
@@ -291,7 +406,11 @@ export default function AdminLayout({
                         <Link
                           href={item.href}
                           onClick={() => setIsMobileOpen(false)}
-                          className={`flex items-center gap-2 xs:gap-2 sm:gap-3 ${isCollapsed ? "px-2 xs:px-3 justify-center" : "px-2 xs:px-3 sm:px-4"} py-2 xs:py-2.5 sm:py-3 lg:py-3.5 rounded-lg sm:rounded-xl transition-all duration-200 group relative
+                          className={`flex items-center gap-2 xs:gap-2 sm:gap-3 ${
+                            isCollapsed
+                              ? "px-2 xs:px-3 justify-center"
+                              : "px-2 xs:px-3 sm:px-4"
+                          } py-2 xs:py-2.5 sm:py-3 lg:py-3.5 rounded-lg sm:rounded-xl transition-all duration-200 group relative
                             ${
                               active
                                 ? "bg-white text-[#7d1a1a] shadow-xl shadow-black/20"
@@ -301,7 +420,11 @@ export default function AdminLayout({
                         >
                           <item.icon
                             size={isCollapsed ? 16 : 18}
-                            className={`flex-shrink-0 xs:w-[18px] xs:h-[18px] sm:w-5 sm:h-5 ${active ? "text-[#7d1a1a]" : "group-hover:scale-110 transition-transform"}`}
+                            className={`flex-shrink-0 xs:w-[18px] xs:h-[18px] sm:w-5 sm:h-5 ${
+                              active
+                                ? "text-[#7d1a1a]"
+                                : "group-hover:scale-110 transition-transform"
+                            }`}
                           />
                           {!isCollapsed && (
                             <span className="text-[11px] xs:text-xs sm:text-sm font-semibold tracking-wide truncate">
@@ -339,7 +462,11 @@ export default function AdminLayout({
                                 >
                                   <subItem.icon
                                     size={14}
-                                    className={`flex-shrink-0 xs:w-4 xs:h-4 ${subActive ? "text-white" : "group-hover:scale-110 transition-transform"}`}
+                                    className={`flex-shrink-0 xs:w-4 xs:h-4 ${
+                                      subActive
+                                        ? "text-white"
+                                        : "group-hover:scale-110 transition-transform"
+                                    }`}
                                   />
                                   <span className="text-[10px] xs:text-[11px] sm:text-xs font-semibold tracking-wide truncate">
                                     {subItem.label}
@@ -362,30 +489,46 @@ export default function AdminLayout({
         </nav>
 
         {/* Sidebar Footer */}
-        <div className={`${isCollapsed ? "p-2 sm:p-3" : "p-2 xs:p-3 sm:p-4"} border-t border-white/10 bg-black/10 flex-shrink-0`}>
+        <div
+          className={`${
+            isCollapsed ? "p-2 sm:p-3" : "p-2 xs:p-3 sm:p-4"
+          } border-t border-white/10 bg-black/10 flex-shrink-0`}
+        >
           <button
             onClick={() => setIsCollapsed(!isCollapsed)}
-            className={`hidden lg:flex w-full items-center ${isCollapsed ? "justify-center px-2 xs:px-3" : "gap-2 xs:gap-3 px-3 xs:px-4"} py-2 xs:py-2.5 sm:py-3 text-white/50 hover:text-white hover:bg-white/5 rounded-lg sm:rounded-xl transition-all`}
+            className={`hidden lg:flex w-full items-center ${
+              isCollapsed ? "justify-center px-2 xs:px-3" : "gap-2 xs:gap-3 px-3 xs:px-4"
+            } py-2 xs:py-2.5 sm:py-3 text-white/50 hover:text-white hover:bg-white/5 rounded-lg sm:rounded-xl transition-all`}
           >
             <ChevronRight
-              className={`transition-transform duration-300 flex-shrink-0 ${!isCollapsed ? "rotate-180" : ""}`}
+              className={`transition-transform duration-300 flex-shrink-0 ${
+                !isCollapsed ? "rotate-180" : ""
+              }`}
               size={16}
             />
             {!isCollapsed && (
-              <span className="text-[11px] xs:text-xs sm:text-sm font-semibold">Collapse</span>
+              <span className="text-[11px] xs:text-xs sm:text-sm font-semibold">
+                Collapse
+              </span>
             )}
           </button>
 
-          <button 
+          <button
             onClick={handleLogout}
-            className={`w-full flex items-center ${isCollapsed ? "justify-center px-2 xs:px-3" : "gap-2 xs:gap-3 px-3 xs:px-4"} py-2 xs:py-2.5 sm:py-3 text-red-300 hover:bg-red-500/20 rounded-lg sm:rounded-xl transition-all ${!isCollapsed && "mt-1.5 xs:mt-2"} group cursor-pointer`}
+            className={`w-full flex items-center ${
+              isCollapsed ? "justify-center px-2 xs:px-3" : "gap-2 xs:gap-3 px-3 xs:px-4"
+            } py-2 xs:py-2.5 sm:py-3 text-red-300 hover:bg-red-500/20 rounded-lg sm:rounded-xl transition-all ${
+              !isCollapsed && "mt-1.5 xs:mt-2"
+            } group cursor-pointer`}
           >
             <LogOut
               size={16}
               className="xs:w-[18px] xs:h-[18px] group-hover:-translate-x-1 transition-transform flex-shrink-0"
             />
             {!isCollapsed && (
-              <span className="text-[11px] xs:text-xs sm:text-sm font-semibold">Sign Out</span>
+              <span className="text-[11px] xs:text-xs sm:text-sm font-semibold">
+                Sign Out
+              </span>
             )}
           </button>
         </div>
@@ -393,7 +536,9 @@ export default function AdminLayout({
 
       {/* MAIN CONTENT WRAPPER */}
       <div
-        className={`flex-1 transition-all duration-300 ${isCollapsed ? "lg:ml-16 xl:ml-20" : "lg:ml-64"} overflow-x-hidden`}
+        className={`flex-1 transition-all duration-300 ${
+          isCollapsed ? "lg:ml-16 xl:ml-20" : "lg:ml-64"
+        } overflow-x-hidden`}
       >
         {/* HEADER */}
         <header
@@ -413,17 +558,22 @@ export default function AdminLayout({
             </button>
             <div className="min-w-0">
               <span className="text-white/40 text-[8px] xs:text-[9px] sm:text-[10px] font-black uppercase tracking-[0.15em] xs:tracking-[0.2em] sm:tracking-[0.3em] block">
-                System
+                {user.role}
               </span>
               <h2 className="text-white font-bold text-[11px] xs:text-xs sm:text-sm tracking-tight capitalize truncate">
-                {pathname === "/admin" ? "Dashboard" : pathname.split("/").pop()?.replace("-", " ") || "Dashboard"}
+                {pathname === getBasePath()
+                  ? "Dashboard"
+                  : pathname.split("/").pop()?.replace("-", " ") || "Dashboard"}
               </h2>
             </div>
           </div>
 
           <div className="flex items-center gap-1.5 xs:gap-2 sm:gap-3 md:gap-6 relative z-10 flex-shrink-0">
             {/* Notification Bell */}
-            <button className="relative p-1.5 xs:p-2 sm:p-2.5 text-white/60 hover:bg-white/10 rounded-lg sm:rounded-xl transition-all flex-shrink-0" aria-label="Notifications">
+            <button
+              className="relative p-1.5 xs:p-2 sm:p-2.5 text-white/60 hover:bg-white/10 rounded-lg sm:rounded-xl transition-all flex-shrink-0"
+              aria-label="Notifications"
+            >
               <Bell size={16} className="xs:w-[18px] xs:h-[18px] sm:w-5 sm:h-5" />
               <span className="absolute top-1 right-1 xs:top-1.5 xs:right-1.5 sm:top-2 sm:right-2.5 w-1.5 h-1.5 sm:w-2 sm:h-2 bg-white rounded-full border-2 border-[#5a1313]"></span>
             </button>
@@ -463,7 +613,7 @@ export default function AdminLayout({
                     className="fixed inset-0 z-30"
                     onClick={() => setIsUserMenuOpen(false)}
                   />
-                  
+
                   {/* Menu */}
                   <div className="absolute right-0 mt-2 w-56 xs:w-60 bg-white border border-gray-200 rounded-xl xs:rounded-2xl shadow-2xl z-40 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
                     {/* User Info Header */}
@@ -491,11 +641,14 @@ export default function AdminLayout({
                     {/* Menu Items */}
                     <div className="p-2">
                       <Link
-                        href="/admin/profile"
+                        href={`${getBasePath()}/profile`}
                         className="flex items-center gap-3 px-4 py-3 rounded-lg text-gray-700 hover:bg-gray-50 transition-all group"
                         onClick={() => setIsUserMenuOpen(false)}
                       >
-                        <User size={18} className="text-gray-400 group-hover:text-[#7d1a1a] transition-colors flex-shrink-0" />
+                        <User
+                          size={18}
+                          className="text-gray-400 group-hover:text-[#7d1a1a] transition-colors flex-shrink-0"
+                        />
                         <span className="text-sm font-bold text-gray-900 group-hover:text-[#7d1a1a] transition-colors">
                           View Profile
                         </span>
@@ -508,10 +661,11 @@ export default function AdminLayout({
                         }}
                         className="flex items-center gap-3 w-full px-4 py-3 rounded-lg text-red-600 hover:bg-red-50 transition-all group cursor-pointer"
                       >
-                        <LogOut size={18} className="group-hover:-translate-x-1 transition-transform flex-shrink-0" />
-                        <span className="text-sm font-bold">
-                          Logout
-                        </span>
+                        <LogOut
+                          size={18}
+                          className="group-hover:-translate-x-1 transition-transform flex-shrink-0"
+                        />
+                        <span className="text-sm font-bold">Logout</span>
                       </button>
                     </div>
                   </div>

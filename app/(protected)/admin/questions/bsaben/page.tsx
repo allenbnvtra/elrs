@@ -8,7 +8,7 @@ import {
   GraduationCap, FolderTree, Power, Eye, EyeOff, FileUp
 } from "lucide-react";
 import { useAuth } from "@/contexts/authContext";
-import PDFImportModal from "@/components/admin/questions/PDFImportModal";
+import PDFImportModal from "@/components/questions/PDFImportModal";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface Area {
