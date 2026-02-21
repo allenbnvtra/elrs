@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import clientPromise, { dbName } from "@/lib/mongodb";
-import { Subject, CourseType } from "@/models/Subject";
+import { Subject, CourseType } from "@/models/Questions";
 import { User } from "@/models/User";
 
 type Params = { params: Promise<{ id: string }> };
