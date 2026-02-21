@@ -47,6 +47,7 @@ export async function GET(request: NextRequest) {
           _id: area._id?.toString(),
           name: area.name,
           description: area.description,
+          timer: area.timer,
           subjectCount,
           questionCount,
           createdAt: area.createdAt.toISOString(),
@@ -65,7 +66,9 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { name, description, userId } = body;
+    const { name, description, timerHH, timerMM, timerSS, userId } = body;
+
+    const timer = (parseInt(timerHH || "0") * 3600) + (parseInt(timerMM || "0") * 60) + parseInt(timerSS || "0");
 
     if (!name || !userId) {
       return NextResponse.json({ error: "Name and userId are required" }, { status: 400 });
@@ -102,6 +105,7 @@ export async function POST(request: NextRequest) {
       name: name.trim(),
       description: description?.trim(),
       course: "BSABEN",
+      timer: timer || 0,
       createdBy: new ObjectId(userId),
       createdByName: user.name,
       createdAt: now,
