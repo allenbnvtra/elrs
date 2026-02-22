@@ -11,7 +11,8 @@ import {
 import { useAuth } from "@/contexts/authContext";
 
 interface Score {
-  studentId: string;
+  studentId: string;      // internal ObjectId (kept for linking)
+  studentNumber: string;  // displayed student number
   name: string;
   course: "BSABEN" | "BSGE";
   examsTaken: number;
@@ -309,7 +310,7 @@ export default function ScoresPage() {
                         </div>
                         <div>
                           <p className="text-sm font-black text-gray-900 leading-none">{s.name}</p>
-                          <p className="text-[11px] text-gray-400 font-bold mt-1">{s.studentId}</p>
+                          <p className="text-[11px] text-gray-400 font-bold mt-1">{s.studentNumber}</p>
                         </div>
                       </div>
                     </td>
@@ -409,7 +410,7 @@ export default function ScoresPage() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <h3 className="text-sm xs:text-base font-black text-gray-900 leading-none mb-1 truncate">{s.name}</h3>
-                  <p className="text-[10px] xs:text-[11px] text-gray-400 font-bold mb-1.5">{s.studentId}</p>
+                  <p className="text-[10px] xs:text-[11px] text-gray-400 font-bold mb-1.5">{s.studentNumber}</p>
                   <div className="flex items-center gap-1.5 xs:gap-2 flex-wrap">
                     <span className={`text-xl xs:text-2xl font-black ${getGradeColor(s.grade)}`}>{s.grade}</span>
                     <span className={`inline-flex items-center gap-1 px-1.5 xs:px-2 py-0.5 xs:py-1 rounded-full text-[8px] xs:text-[9px] font-black uppercase ${sc.bg} ${sc.text}`}>

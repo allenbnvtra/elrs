@@ -47,6 +47,16 @@ export async function GET(request: NextRequest) {
         },
       },
       {
+        $lookup: {
+          from: "users", localField: "_id", foreignField: "_id", as: "userDoc",
+        },
+      },
+      {
+        $addFields: {
+          studentNumber: { $ifNull: [{ $arrayElemAt: ["$userDoc.studentNumber", 0] }, "N/A"] },
+        },
+      },
+      {
         $addFields: {
           averageScore: {
             $cond: [
@@ -94,9 +104,9 @@ export async function GET(request: NextRequest) {
       ...(search  ? [{ $match: { userName: { $regex: search, $options: "i" } } }] : []),
       {
         $project: {
-          _id:          0,
-          studentId:    { $toString: "$_id" },
-          name:         { $ifNull: ["$userName", "Unknown Student"] },
+          _id:           0,
+          studentNumber: 1,
+          name:          { $ifNull: ["$userName", "Unknown Student"] },
           course:       { $literal: course },
           examsTaken:   1,
           averageScore: { $round: ["$averageScore", 1] },
@@ -113,7 +123,7 @@ export async function GET(request: NextRequest) {
     const rows = await db.collection("examResults").aggregate(pipeline).toArray();
 
     const headers = [
-      "Student ID", "Name", "Course", "Exams Taken",
+      "Student Number", "Name", "Course", "Exams Taken",
       "Average Score", "Highest Score", "Lowest Score",
       "Grade", "Status", "Last Exam",
     ];
@@ -129,7 +139,7 @@ export async function GET(request: NextRequest) {
       headers.join(","),
       ...rows.map(r =>
         [
-          r.studentId,
+          r.studentNumber,
           r.name,
           r.course,
           r.examsTaken,

@@ -3,23 +3,21 @@ import { ObjectId } from "mongodb";
 import clientPromise, { dbName } from "@/lib/mongodb";
 
 // ─── GET /api/scores ───────────────────────────────────────────────────────────
-// Per-student score breakdown from examResults
-// Admin → any course; Faculty → scoped to their own course
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const page   = Math.max(1, parseInt(searchParams.get("page")  ?? "1",  10));
     const limit  = Math.min(100, Math.max(1, parseInt(searchParams.get("limit") ?? "20", 10)));
     const skip   = (page - 1) * limit;
-    const status = searchParams.get("status");   // excellent | good | needs-improvement | null
+    const status = searchParams.get("status");
     const search = searchParams.get("search") ?? "";
     const userId = searchParams.get("userId");
 
-    // ── Auth / course scoping ──────────────────────────────────────────────────
     const client = await clientPromise;
     const db     = client.db(dbName);
 
-    let allowedCourse: string | null = null;   // null = admin (all courses)
+    // ── Auth / course scoping ──────────────────────────────────────────────────
+    let allowedCourse: string | null = null;
     const courseParam = searchParams.get("course") ?? "BSABEN";
 
     if (userId) {
@@ -33,16 +31,13 @@ export async function GET(request: NextRequest) {
       if (user.role !== "admin" && user.role !== "faculty") {
         return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
       }
-      if (user.role === "faculty") {
-        allowedCourse = (user as any).course;   // faculty locked to their course
-      }
+      if (user.role === "faculty") allowedCourse = (user as any).course;
     }
 
     const course = allowedCourse ?? courseParam;
 
-    // ── Build pipeline ─────────────────────────────────────────────────────────
+    // ── Pipeline ───────────────────────────────────────────────────────────────
     const pipeline: any[] = [
-      // Match completed/legacy exams for the scoped course
       {
         $match: {
           course,
@@ -53,7 +48,7 @@ export async function GET(request: NextRequest) {
         },
       },
 
-      // Group per student — one doc per exam, so group by userId
+      // Group per student
       {
         $group: {
           _id:            "$userId",
@@ -61,12 +56,32 @@ export async function GET(request: NextRequest) {
           examsTaken:     { $sum: 1 },
           totalCorrect:   { $sum: "$correctCount" },
           totalQuestions: { $sum: "$totalQuestions" },
-          scores:         { $push: "$percentage" },   // array of exam percentages
+          scores:         { $push: "$percentage" },
           lastExam:       { $max: "$completedAt" },
         },
       },
 
-      // Derive averageScore, highestScore, lowestScore
+      // Join users to get studentNumber
+      {
+        $lookup: {
+          from:         "users",
+          localField:   "_id",          // userId (ObjectId) stored on examResults
+          foreignField: "_id",          // _id on users collection
+          as:           "userDoc",
+        },
+      },
+      {
+        $addFields: {
+          studentNumber: {
+            $ifNull: [
+              { $arrayElemAt: ["$userDoc.studentNumber", 0] },
+              "N/A",
+            ],
+          },
+        },
+      },
+
+      // Derive scores
       {
         $addFields: {
           averageScore: {
@@ -81,14 +96,14 @@ export async function GET(request: NextRequest) {
         },
       },
 
-      // Grade + status
+      // Status + grade
       {
         $addFields: {
           status: {
             $switch: {
               branches: [
-                { case: { $gte: ["$averageScore", 90] }, then: "excellent" },
-                { case: { $gte: ["$averageScore", 75] }, then: "good" },
+                { case: { $gte: ["$averageScore", 90] }, then: "excellent"        },
+                { case: { $gte: ["$averageScore", 75] }, then: "good"             },
               ],
               default: "needs-improvement",
             },
@@ -114,49 +129,51 @@ export async function GET(request: NextRequest) {
         },
       },
 
-      // Filter by status
       ...(status ? [{ $match: { status } }] : []),
 
-      // Search by stored userName (no join needed — userName is on every examResult doc)
-      ...(search
-        ? [{ $match: { userName: { $regex: search, $options: "i" } } }]
-        : []),
+      // Search by name OR studentNumber
+      ...(search ? [{
+        $match: {
+          $or: [
+            { userName:      { $regex: search, $options: "i" } },
+            { studentNumber: { $regex: search, $options: "i" } },
+          ],
+        },
+      }] : []),
 
-      // Shape output
       {
         $project: {
-          _id:          0,
-          studentId:    { $toString: "$_id" },
-          name:         { $ifNull: ["$userName", "Unknown Student"] },
-          course:       { $literal: course },
-          examsTaken:   1,
-          averageScore: { $round: ["$averageScore", 1] },
-          highestScore: 1,
-          lowestScore:  1,
-          status:       1,
-          grade:        1,
-          lastExam:     1,
+          _id:           0,
+          studentId:     { $toString: "$_id" },   // keep internal id for linking
+          studentNumber: 1,
+          name:          { $ifNull: ["$userName", "Unknown Student"] },
+          course:        { $literal: course },
+          examsTaken:    1,
+          averageScore:  { $round: ["$averageScore", 1] },
+          highestScore:  1,
+          lowestScore:   1,
+          status:        1,
+          grade:         1,
+          lastExam:      1,
         },
       },
 
       { $sort: { averageScore: -1 } },
     ];
 
-    // Count + paginated fetch in parallel
     const [countResult, scores] = await Promise.all([
-      db.collection("examResults")
-        .aggregate([...pipeline, { $count: "total" }])
-        .toArray(),
-      db.collection("examResults")
-        .aggregate([...pipeline, { $skip: skip }, { $limit: limit }])
-        .toArray(),
+      db.collection("examResults").aggregate([...pipeline, { $count: "total" }]).toArray(),
+      db.collection("examResults").aggregate([...pipeline, { $skip: skip }, { $limit: limit }]).toArray(),
     ]);
-
-    const total = countResult[0]?.total ?? 0;
 
     return NextResponse.json({
       scores,
-      pagination: { total, page, limit, totalPages: Math.ceil(total / limit) },
+      pagination: {
+        total:      countResult[0]?.total ?? 0,
+        page,
+        limit,
+        totalPages: Math.ceil((countResult[0]?.total ?? 0) / limit),
+      },
     });
   } catch (error) {
     console.error("GET /api/scores error:", error);
