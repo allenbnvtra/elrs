@@ -1,27 +1,28 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// FILE: app/reset-password/page.tsx
-// ─────────────────────────────────────────────────────────────────────────────
 "use client";
 
-import React, { useState, useEffect } from "react";
-import { Lock, Eye, EyeOff, ArrowRight, CheckCircle, AlertCircle, Loader2, ShieldAlert } from "lucide-react";
+import React, { useState, Suspense } from "react";
+import {
+  Lock, Eye, EyeOff, ArrowRight, CheckCircle,
+  AlertCircle, Loader2, ShieldAlert,
+} from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 
 const primaryGradient = { background: "linear-gradient(135deg, #7d1a1a 0%, #5a1313 100%)" };
 
-export default function ResetPasswordPage() {
-  const searchParams          = useSearchParams();
-  const token                 = searchParams.get("token") ?? "";
+// ── Inner component: uses useSearchParams — must be inside Suspense ──────────
+function ResetPasswordForm() {
+  const searchParams = useSearchParams();
+  const token        = searchParams.get("token") ?? "";
 
-  const [password, setPassword]           = useState("");
-  const [confirm, setConfirm]             = useState("");
-  const [showPassword, setShowPassword]   = useState(false);
-  const [showConfirm, setShowConfirm]     = useState(false);
-  const [isLoading, setIsLoading]         = useState(false);
-  const [error, setError]                 = useState("");
-  const [done, setDone]                   = useState(false);
+  const [password, setPassword]         = useState("");
+  const [confirm, setConfirm]           = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirm, setShowConfirm]   = useState(false);
+  const [isLoading, setIsLoading]       = useState(false);
+  const [error, setError]               = useState("");
+  const [done, setDone]                 = useState(false);
 
   const passwordsMatch = password === confirm;
   const strongEnough   = password.length >= 8;
@@ -33,12 +34,11 @@ export default function ResetPasswordPage() {
 
     setError("");
     setIsLoading(true);
-
     try {
       const res  = await fetch("/api/auth/reset-password", {
-        method: "POST",
+        method:  "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token, password }),
+        body:    JSON.stringify({ token, password }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Reset failed");
@@ -50,6 +50,7 @@ export default function ResetPasswordPage() {
     }
   };
 
+  // ── Missing / invalid token ──
   if (!token) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#f8f9fa] p-8">
@@ -85,10 +86,10 @@ export default function ResetPasswordPage() {
       >
         <div className="absolute inset-0 opacity-10 pointer-events-none">
           <svg width="100%" height="100%">
-            <pattern id="grid2" width="40" height="40" patternUnits="userSpaceOnUse">
+            <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
               <path d="M 40 0 L 0 0 0 40" fill="none" stroke="white" strokeWidth="1" />
             </pattern>
-            <rect width="100%" height="100%" fill="url(#grid2)" />
+            <rect width="100%" height="100%" fill="url(#grid)" />
           </svg>
         </div>
         <div className="relative z-10">
@@ -123,6 +124,7 @@ export default function ResetPasswordPage() {
           </div>
 
           {done ? (
+            /* ── Success state ── */
             <div className="text-center space-y-6">
               <div className="flex justify-center">
                 <div className="p-5 rounded-full bg-green-50 border border-green-200">
@@ -136,7 +138,7 @@ export default function ResetPasswordPage() {
                 </p>
               </div>
               <Link
-                href="/"
+                href="/login"
                 className="inline-flex items-center gap-2 px-8 py-3 rounded-xl text-white font-bold"
                 style={primaryGradient}
               >
@@ -144,6 +146,7 @@ export default function ResetPasswordPage() {
               </Link>
             </div>
           ) : (
+            /* ── Form state ── */
             <>
               <div className="mb-8 text-center md:text-left">
                 <h2 className="text-3xl font-bold text-[#1a1a1a] mb-2">New Password</h2>
@@ -172,7 +175,11 @@ export default function ResetPasswordPage() {
                       disabled={isLoading}
                       className="w-full bg-white border border-[#dee2e6] rounded-xl py-4 pl-12 pr-12 text-[#1a1a1a] focus:outline-none focus:ring-2 focus:ring-[#7d1a1a]/20 focus:border-[#7d1a1a] transition-all shadow-sm disabled:opacity-50"
                     />
-                    <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-4 top-1/2 -translate-y-1/2 text-[#6c757d] hover:text-[#1a1a1a]">
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-4 top-1/2 -translate-y-1/2 text-[#6c757d] hover:text-[#1a1a1a]"
+                    >
                       {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
                     </button>
                   </div>
@@ -214,7 +221,11 @@ export default function ResetPasswordPage() {
                           : "border-[#dee2e6] focus:ring-[#7d1a1a]/20 focus:border-[#7d1a1a]"
                       }`}
                     />
-                    <button type="button" onClick={() => setShowConfirm(!showConfirm)} className="absolute right-4 top-1/2 -translate-y-1/2 text-[#6c757d] hover:text-[#1a1a1a]">
+                    <button
+                      type="button"
+                      onClick={() => setShowConfirm(!showConfirm)}
+                      className="absolute right-4 top-1/2 -translate-y-1/2 text-[#6c757d] hover:text-[#1a1a1a]"
+                    >
                       {showConfirm ? <EyeOff size={20} /> : <Eye size={20} />}
                     </button>
                   </div>
@@ -244,3 +255,17 @@ export default function ResetPasswordPage() {
   );
 }
 
+// ── Page export: wraps inner component in Suspense ───────────────────────────
+export default function ResetPasswordPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center bg-[#f8f9fa]">
+          <Loader2 size={32} className="animate-spin text-[#7d1a1a]" />
+        </div>
+      }
+    >
+      <ResetPasswordForm />
+    </Suspense>
+  );
+}

@@ -1,7 +1,3 @@
-
-// ─────────────────────────────────────────────────────────────────────────────
-// FILE: app/api/auth/forgot-password/route.ts
-// ─────────────────────────────────────────────────────────────────────────────
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import clientPromise, { dbName } from "@/lib/mongodb";

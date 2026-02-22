@@ -1,6 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// FILE: app/forgot-password/page.tsx
-// ─────────────────────────────────────────────────────────────────────────────
 "use client";
 
 import React, { useState } from "react";
@@ -115,7 +112,7 @@ export default function ForgotPasswordPage() {
                 </button>
               </p>
               <Link
-                href="/"
+                href="/login"
                 className="inline-flex items-center gap-2 text-sm font-semibold text-[#1a1a1a] hover:text-[#7d1a1a]"
               >
                 <ArrowLeft size={16} /> Back to Sign In

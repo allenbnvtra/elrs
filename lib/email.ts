@@ -1,8 +1,3 @@
-
-// ─────────────────────────────────────────────────────────────────────────────
-// FILE: lib/email.ts  (create this if you don't have one yet)
-// Uses nodemailer — run: npm install nodemailer @types/nodemailer
-// ─────────────────────────────────────────────────────────────────────────────
 import nodemailer from "nodemailer";
 
 const transporter = nodemailer.createTransport({

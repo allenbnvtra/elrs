@@ -1,6 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// FILE: app/api/auth/reset-password/route.ts
-// ─────────────────────────────────────────────────────────────────────────────
 import { NextRequest, NextResponse } from "next/server";
 import clientPromise, { dbName } from "@/lib/mongodb";
 import { hashPassword } from "@/lib/auth";
