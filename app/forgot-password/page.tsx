@@ -112,7 +112,7 @@ export default function ForgotPasswordPage() {
                 </button>
               </p>
               <Link
-                href="/login"
+                href="/"
                 className="inline-flex items-center gap-2 text-sm font-semibold text-[#1a1a1a] hover:text-[#7d1a1a]"
               >
                 <ArrowLeft size={16} /> Back to Sign In
@@ -171,7 +171,7 @@ export default function ForgotPasswordPage() {
 
               <div className="mt-8 pt-6 border-t border-[#dee2e6] text-center">
                 <Link
-                  href="/login"
+                  href="/"
                   className="inline-flex items-center gap-2 text-sm font-semibold text-[#1a1a1a] hover:text-[#7d1a1a]"
                 >
                   <ArrowLeft size={16} /> Back to Sign In

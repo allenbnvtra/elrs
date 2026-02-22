@@ -138,7 +138,7 @@ function ResetPasswordForm() {
                 </p>
               </div>
               <Link
-                href="/login"
+                href="/"
                 className="inline-flex items-center gap-2 px-8 py-3 rounded-xl text-white font-bold"
                 style={primaryGradient}
               >
