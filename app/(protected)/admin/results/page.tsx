@@ -410,7 +410,7 @@ export default function ResultsPage() {
             className="px-4 xs:px-5 sm:px-6 py-2.5 xs:py-3 sm:py-4 bg-gray-50 border border-transparent hover:border-gray-200 rounded-xl xs:rounded-2xl sm:rounded-[24px] text-[10px] xs:text-xs font-black uppercase text-gray-700 cursor-pointer outline-none transition-all appearance-none"
           >
             <option value="All">All Departments</option>
-            <option value="BSABEN">BSABE Engineering</option>
+            <option value="BSABEN">BSABEN Engineering</option>
             <option value="BSGE">BSGE Geodetic</option>
           </select>
 
