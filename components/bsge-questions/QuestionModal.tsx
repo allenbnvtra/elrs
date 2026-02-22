@@ -2,10 +2,10 @@
 
 import React, { useState, useEffect } from "react";
 import {
-  Plus, X, BookOpen, AlertCircle, Eye, EyeOff,
-  CheckCircle2, Loader2,
+  Plus, X, BookOpen, AlertCircle, Loader2,
+  CheckCircle2, Eye, EyeOff,
 } from "lucide-react";
-import type { Question, FormData } from "../../types/bsge-questions";
+import type { Question, FormData } from "./types";
 import { EMPTY_FORM, inputCls, labelCls } from "./constants";
 
 interface Props {
@@ -16,7 +16,7 @@ interface Props {
   defaultSubject?: string;
 }
 
-export function QuestionModal({ editQuestion, onClose, onSaved, userId, defaultSubject }: Props) {
+export default function QuestionModal({ editQuestion, onClose, onSaved, userId, defaultSubject }: Props) {
   const isEdit = !!editQuestion;
 
   const [form, setForm] = useState<FormData>(
@@ -64,8 +64,8 @@ export function QuestionModal({ editQuestion, onClose, onSaved, userId, defaultS
     if (!form.questionText.trim()) { setError("Question text is required."); return; }
     if (!form.optionA.trim()) { setError("Option A is required."); return; }
     if (!form.optionB.trim()) { setError("Option B is required."); return; }
-    if (form.correctAnswer === "C" && !form.optionC.trim()) { setError("Option C is required when marked as correct."); return; }
-    if (form.correctAnswer === "D" && !form.optionD.trim()) { setError("Option D is required when marked as correct."); return; }
+    if (form.correctAnswer === "C" && !form.optionC.trim()) { setError("Option C is required when correct."); return; }
+    if (form.correctAnswer === "D" && !form.optionD.trim()) { setError("Option D is required when correct."); return; }
     if (!form.category.trim()) { setError("Category is required."); return; }
     if (!form.subject.trim()) { setError("Subject is required."); return; }
 
@@ -130,7 +130,9 @@ export function QuestionModal({ editQuestion, onClose, onSaved, userId, defaultS
               </div>
               <div>
                 <p className="text-sm font-bold text-gray-900">Question Status</p>
-                <p className="text-xs text-gray-500">{form.isActive ? "Active and visible" : "Inactive and hidden"}</p>
+                <p className="text-xs text-gray-500">
+                  {form.isActive ? "This question is active and visible" : "This question is inactive and hidden"}
+                </p>
               </div>
             </div>
             <button
@@ -184,14 +186,12 @@ export function QuestionModal({ editQuestion, onClose, onSaved, userId, defaultS
                   <div key={letter} className="flex items-center gap-2.5">
                     <button type="button" onClick={() => set("correctAnswer", letter)}
                       className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-black shrink-0 border-2 transition-all ${
-                        isCorrect ? "bg-[#7d1a1a] text-white border-[#7d1a1a] shadow-sm"
-                          : "bg-white text-gray-400 border-gray-200 hover:border-[#7d1a1a] hover:text-[#7d1a1a]"
+                        isCorrect ? "bg-[#7d1a1a] text-white border-[#7d1a1a] shadow-sm" : "bg-white text-gray-400 border-gray-200 hover:border-[#7d1a1a] hover:text-[#7d1a1a]"
                       }`}>{letter}</button>
                     <input type="text" placeholder={isOptional ? `Option ${letter} (optional)` : `Option ${letter} *`}
                       value={form[fieldKey] as string} onChange={(e) => set(fieldKey, e.target.value)}
                       className={`flex-1 px-3 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 transition-all placeholder:text-gray-400 ${
-                        isCorrect ? "bg-[#7d1a1a]/5 border-[#7d1a1a]/40 focus:ring-[#7d1a1a]/20 focus:border-[#7d1a1a]"
-                          : "bg-gray-50 border-gray-200 focus:ring-[#7d1a1a]/20 focus:border-[#7d1a1a]"
+                        isCorrect ? "bg-[#7d1a1a]/5 border-[#7d1a1a]/40 focus:ring-[#7d1a1a]/20 focus:border-[#7d1a1a]" : "bg-gray-50 border-gray-200 focus:ring-[#7d1a1a]/20 focus:border-[#7d1a1a]"
                       }`} />
                     {isCorrect && <span className="text-[10px] font-black text-[#7d1a1a] uppercase tracking-wide shrink-0 hidden sm:block">✓ Correct</span>}
                   </div>
@@ -217,8 +217,7 @@ export function QuestionModal({ editQuestion, onClose, onSaved, userId, defaultS
           <div>
             <label className={labelCls}>Explanation <span className="normal-case font-medium text-gray-400 tracking-normal">(optional)</span></label>
             <textarea rows={2} placeholder="Brief explanation of why the answer is correct…"
-              value={form.explanation} onChange={(e) => set("explanation", e.target.value)}
-              className={`${inputCls} resize-none`} />
+              value={form.explanation} onChange={(e) => set("explanation", e.target.value)} className={`${inputCls} resize-none`} />
           </div>
         </div>
 

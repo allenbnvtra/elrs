@@ -3,7 +3,6 @@ import { ObjectId } from "mongodb";
 import clientPromise, { dbName } from "@/lib/mongodb";
 
 // ─── POST /api/exams/log-violation ────────────────────────────────────────────
-// Logs a cheating violation during exam
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -21,12 +20,12 @@ export async function POST(request: NextRequest) {
     }
 
     const client = await clientPromise;
-    const db = client.db(dbName);
+    const db     = client.db(dbName);
     const examSessionsCol = db.collection("examSessions");
 
-    // Get exam session
+    // Only allow logging on active sessions
     const examSession = await examSessionsCol.findOne({
-      _id: new ObjectId(examSessionId),
+      _id:    new ObjectId(examSessionId),
       userId: new ObjectId(userId),
       status: "in-progress",
     });
@@ -38,32 +37,33 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Log the violation
     const violation = {
-      type: violationType,
-      timestamp: timestamp || new Date(),
+      type:      violationType,
+      timestamp: timestamp ? new Date(timestamp) : new Date(),
     };
 
-    const newViolationCount = (examSession.violationCount || 0) + 1;
-    const shouldAutoSubmit = newViolationCount >= 3;
+    // Use the DB's stored violationCount as source of truth
+    const newViolationCount = (examSession.violationCount ?? 0) + 1;
+    const shouldAutoSubmit  = newViolationCount >= 3;
 
-    // Update exam session with violation
     await examSessionsCol.updateOne(
       { _id: new ObjectId(examSessionId) },
       {
         $push: { violations: violation } as any,
         $set: {
           violationCount: newViolationCount,
+          updatedAt: new Date(),
+          // Pre-flag the session so submit route picks it up correctly
           ...(shouldAutoSubmit && {
-            status: "flagged",
             wasFlagged: true,
+            status:     "flagged",
           }),
         },
       }
     );
 
     return NextResponse.json({
-      success: true,
+      success:        true,
       violationCount: newViolationCount,
       shouldAutoSubmit,
       message: shouldAutoSubmit

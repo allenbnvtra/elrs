@@ -1,4 +1,4 @@
-import type { FormData } from "../../types/bsge-questions";
+import type { FormData } from "./types";
 
 export const EMPTY_FORM: FormData = {
   questionText: "",

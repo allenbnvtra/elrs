@@ -132,30 +132,35 @@ async function safeJson(url: string): Promise<any> {
   } catch { return null; }
 }
 
-async function fetchCourseStats(course: Course, userId: string): Promise<CourseStats> {
-  const [scores, results, materialsBsaben, pending] = await Promise.all([
-    safeJson(`/api/scores/stats?course=${course}`),
-    safeJson(`/api/results/stats`),
+async function fetchCourseStats(
+  course: Course,
+  userId: string,
+  resultsData: any   // pass the already-fetched results/stats payload
+): Promise<CourseStats> {
+  const [scores, materialsRes, pending] = await Promise.all([
+    safeJson(`/api/scores/stats?course=${course}&userId=${userId}`),
     safeJson(`/api/review-materials?course=${course}`),
     safeJson(`/api/students/approve?userId=${userId}&status=pending&course=${course}&limit=1`),
   ]);
 
-  const mats: any[] = materialsBsaben?.materials ?? [];
-  const courseResult = results?.[course?.toLowerCase()] ?? {};
+  const mats: any[] = materialsRes?.materials ?? [];
+  // results/stats returns { bsaben: {...}, bsge: {...} }
+  const courseKey    = course.toLowerCase() as "bsaben" | "bsge";
+  const courseResult = resultsData?.[courseKey] ?? {};
 
   return {
-    totalStudents: scores?.totalStudents ?? 0,
-    averageScore: scores?.averageScore ?? 0,
-    passRate: scores?.passRate ?? 0,
+    totalStudents: scores?.totalStudents   ?? 0,
+    averageScore:  scores?.averageScore    ?? 0,
+    passRate:      scores?.passRate        ?? 0,
     excellentCount: scores?.excellentCount ?? 0,
-    successRate: courseResult.successRate ?? 0,
-    correct: courseResult.correct ?? 0,
-    wrong: courseResult.wrong ?? 0,
-    questionPool: courseResult.totalPool ?? 0,
-    materials: mats.length,
-    documents: mats.filter(m => m.type === "document").length,
-    videos: mats.filter(m => m.type === "video").length,
-    pendingStudents: pending?.students?.length ?? 0,
+    successRate:   courseResult.successRate ?? 0,
+    correct:       courseResult.correct     ?? 0,
+    wrong:         courseResult.wrong       ?? 0,
+    questionPool:  courseResult.totalPool   ?? 0,   // now the real question bank size
+    materials:     mats.length,
+    documents:     mats.filter((m: any) => m.type === "document").length,
+    videos:        mats.filter((m: any) => m.type === "video").length,
+    pendingStudents: pending?.total ?? pending?.students?.length ?? 0,
   };
 }
 
@@ -177,21 +182,27 @@ export default function Dashboard() {
     try {
       const coursesToFetch: Course[] = isAdmin ? ["BSABEN", "BSGE"] : [facultyCourse!];
 
-      // Fetch per-course stats
+      // Fetch results/stats once (single round-trip) — pass userId for faculty scoping
+      const resultsData = await safeJson(`/api/results/stats?userId=${user.id}`);
+
+      // Per-course stats (scores + materials + pending) — reuse the shared resultsData
       const courseResults = await Promise.all(
-        coursesToFetch.map(c => fetchCourseStats(c, user.id))
+        coursesToFetch.map(c => fetchCourseStats(c, user.id, resultsData))
       );
       const courses: Partial<Record<Course, CourseStats>> = {};
       coursesToFetch.forEach((c, i) => { courses[c] = courseResults[i]; });
 
-      // Shared endpoints
-      const [studentsData, resultsData, pendingData] = await Promise.all([
+      // Students list + pending
+      const [studentsData, pendingData] = await Promise.all([
         safeJson(`/api/students?userId=${user.id}&status=approved&limit=1`),
-        safeJson(`/api/results/stats`),
-        safeJson(`/api/students/approve?userId=${user.id}&status=pending&limit=5${!isAdmin ? `&course=${facultyCourse}` : ""}`),
+        safeJson(
+          `/api/students/approve?userId=${user.id}&status=pending&limit=5${
+            !isAdmin ? `&course=${facultyCourse}` : ""
+          }`
+        ),
       ]);
 
-      // Admin-only endpoints
+      // Admin-only
       const [coordinatorsData, archivesData] = isAdmin
         ? await Promise.all([
             safeJson(`/api/coordinators?userId=${user.id}&status=approved`),
@@ -199,25 +210,24 @@ export default function Dashboard() {
           ])
         : [null, null];
 
-      // Compute overall from fetched courses
+      // Overall aggregates from course stats
       const allCourseStats = Object.values(courses) as CourseStats[];
-      const totalCorrect = allCourseStats.reduce((s, c) => s + c.correct, 0);
-      const totalWrong = allCourseStats.reduce((s, c) => s + c.wrong, 0);
-      const totalAnswered = totalCorrect + totalWrong;
+      const totalCorrect   = allCourseStats.reduce((s, c) => s + c.correct, 0);
+      const totalWrong     = allCourseStats.reduce((s, c) => s + c.wrong,   0);
 
       setData({
         role: isAdmin ? "admin" : "faculty",
         courses,
         overall: {
-          totalStudents: studentsData?.stats?.totalStudents ?? 0,
-          totalAnswered,
-          correct: totalCorrect,
-          wrong: totalWrong,
-          overallScore: resultsData?.overall?.overallScore ?? 0,
-          uniqueStudents: resultsData?.overall?.uniqueStudents ?? 0,
-          coordinators: coordinatorsData?.stats?.totalCoordinators ?? 0,
+          totalStudents:      studentsData?.stats?.totalStudents          ?? 0,
+          totalAnswered:      totalCorrect + totalWrong,
+          correct:            totalCorrect,
+          wrong:              totalWrong,
+          overallScore:       resultsData?.overall?.overallScore          ?? 0,
+          uniqueStudents:     resultsData?.overall?.uniqueStudents        ?? 0,
+          coordinators:       coordinatorsData?.stats?.totalCoordinators  ?? 0,
           totalContributions: coordinatorsData?.stats?.totalContributions ?? 0,
-          archivedTotal: archivesData?.stats?.totalArchived ?? 0,
+          archivedTotal:      archivesData?.stats?.totalArchived          ?? 0,
         },
         pendingStudents: pendingData?.students?.slice(0, 5) ?? [],
       });

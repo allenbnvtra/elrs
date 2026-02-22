@@ -34,7 +34,7 @@ export interface Area {
   name: string;
   description?: string;
   course: CourseType;  // Always BSABEN
-  timer: number;  // Time in seconds for the timer
+  timer?: number;
   createdBy: ObjectId;
   createdByName: string;
   createdAt: Date;
@@ -46,7 +46,8 @@ export interface Subject {
   name: string;
   description?: string;
   course: CourseType;
-  area?: string;  // Optional - only for BSABEN
+  area?: string; 
+  timer?: number;
   createdBy: ObjectId;
   createdByName: string;
   createdAt: Date;

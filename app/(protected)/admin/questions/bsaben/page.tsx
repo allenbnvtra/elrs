@@ -115,7 +115,7 @@ export default function BSABENQuestionsPage() {
   const [subjectSearchQuery, setSubjectSearchQuery] = useState("");
   const [showSubjectModal, setShowSubjectModal] = useState(false);
   const [editingSubject, setEditingSubject] = useState<Subject | null>(null);
-  const [subjectForm, setSubjectForm] = useState({ name: "", description: "" });
+  const [subjectForm, setSubjectForm] = useState({ name: "", description: "", timerHH: "00", timerMM: "00", timerSS: "00" });
   const [savingSubject, setSavingSubject] = useState(false);
 
   // Questions state
@@ -310,13 +310,13 @@ export default function BSABENQuestionsPage() {
   // Subject handlers
   const openAddSubject = () => {
     setEditingSubject(null);
-    setSubjectForm({ name: "", description: "" });
+    setSubjectForm({ name: "", description: "", timerHH: "00", timerMM: "00", timerSS: "00" });
     setShowSubjectModal(true);
   };
 
   const openEditSubject = (subject: Subject) => {
     setEditingSubject(subject);
-    setSubjectForm({ name: subject.name, description: subject.description || "" });
+    setSubjectForm({ name: subject.name, description: subject.description || "", timerHH: "00", timerMM: "00", timerSS: "00" });
     setShowSubjectModal(true);
   };
 

@@ -2,7 +2,7 @@
 
 import React, { useState, useRef } from "react";
 import { X, FileText, AlertCircle, Upload, Loader2, CheckCircle2 } from "lucide-react";
-import type { ParsedQuestion } from "../../types/bsge-questions";
+import type { ParsedQuestion } from "./types";
 
 interface Props {
   isOpen: boolean;
@@ -12,7 +12,7 @@ interface Props {
   defaultSubject?: string;
 }
 
-export function PDFImportModal({ isOpen, onClose, onSuccess, userId, defaultSubject }: Props) {
+export default function PDFImportModal({ isOpen, onClose, onSuccess, userId, defaultSubject }: Props) {
   const [step, setStep] = useState<"upload" | "preview">("upload");
   const [uploading, setUploading] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -90,7 +90,7 @@ export function PDFImportModal({ isOpen, onClose, onSuccess, userId, defaultSubj
     });
   };
 
-  const readyQuestions = parsedQuestions.filter(q => q.correctAnswer);
+  const readyToImport = parsedQuestions.filter(q => q.correctAnswer);
   const needsReview = parsedQuestions.filter(q => !q.correctAnswer);
 
   return (
@@ -175,7 +175,7 @@ export function PDFImportModal({ isOpen, onClose, onSuccess, userId, defaultSubj
             <div className="space-y-4">
               <div className="grid grid-cols-3 gap-3">
                 <div className="bg-green-50 border border-green-200 rounded-xl p-4 text-center">
-                  <p className="text-2xl font-black text-green-600">{readyQuestions.length}</p>
+                  <p className="text-2xl font-black text-green-600">{readyToImport.length}</p>
                   <p className="text-xs font-bold text-green-600 mt-1">Ready to Import</p>
                 </div>
                 <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-center">
@@ -210,7 +210,8 @@ export function PDFImportModal({ isOpen, onClose, onSuccess, userId, defaultSubj
                     </div>
                     <div className="flex items-center gap-2">
                       <label className="text-xs font-bold text-gray-700">Correct Answer:</label>
-                      <select value={q.correctAnswer || ""} onChange={(e) => updateQuestion(index, "correctAnswer", e.target.value)}
+                      <select value={q.correctAnswer || ""}
+                        onChange={(e) => updateQuestion(index, "correctAnswer", e.target.value)}
                         className={`px-2 py-1 border rounded text-xs font-bold ${q.correctAnswer ? "border-green-300 bg-green-50 text-green-700" : "border-amber-300 bg-amber-50 text-amber-700"}`}>
                         <option value="">Select...</option>
                         <option value="A">A</option>
@@ -239,9 +240,9 @@ export function PDFImportModal({ isOpen, onClose, onSuccess, userId, defaultSubj
               Cancel
             </button>
             {step === "preview" && (
-              <button onClick={handleConfirmImport} disabled={importing || readyQuestions.length === 0}
+              <button onClick={handleConfirmImport} disabled={importing || readyToImport.length === 0}
                 className="px-6 py-2.5 bg-green-600 text-white rounded-xl font-bold text-sm hover:bg-green-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2">
-                {importing ? <><Loader2 size={16} className="animate-spin" />Importing...</> : <><CheckCircle2 size={16} />Import {readyQuestions.length} Questions</>}
+                {importing ? <><Loader2 size={16} className="animate-spin" />Importing...</> : <><CheckCircle2 size={16} />Import {readyToImport.length} Questions</>}
               </button>
             )}
           </div>

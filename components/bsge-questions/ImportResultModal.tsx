@@ -2,14 +2,14 @@
 
 import React from "react";
 import { X, CheckCircle2, AlertCircle, AlertTriangle } from "lucide-react";
-import type { ImportResult } from "../../types/bsge-questions";
+import type { ImportResult } from "./types";
 
 interface Props {
   result: ImportResult;
   onClose: () => void;
 }
 
-export function ImportResultModal({ result, onClose }: Props) {
+export default function ImportResultModal({ result, onClose }: Props) {
   const totalDups = result.duplicatesInFile.length + result.duplicatesInDb.length;
   const hasIssues = result.errors.length > 0 || totalDups > 0;
 

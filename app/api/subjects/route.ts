@@ -66,7 +66,9 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { name, description, course, area, userId } = body;
+    const { name, description, course, timerHH, timerMM, timerSS, area, userId } = body;
+
+    const timer = (parseInt(timerHH || "0") * 3600) + (parseInt(timerMM || "0") * 60) + parseInt(timerSS || "0");
 
     // Validation
     if (!name || !course || !userId) {
@@ -150,7 +152,8 @@ export async function POST(request: NextRequest) {
       name: name.trim(),
       description: description?.trim() || undefined,
       course,
-      area: course === "BSABEN" ? area : undefined, // NEW: Store area for BSABEN
+      area: course === "BSABEN" ? area : undefined, 
+      timer,
       createdBy: new ObjectId(userId),
       createdByName: user.name,
       createdAt: now,

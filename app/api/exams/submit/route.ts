@@ -5,14 +5,15 @@ import { Question } from "@/models/Questions";
 
 // ─── POST /api/exams/submit ────────────────────────────────────────────────────
 // Submits exam answers and returns results
+// Works for: manual submit, timer expiry, and violation auto-submit (answers may be partial/empty)
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const { examSessionId, answers, userId } = body;
 
-    if (!examSessionId || !answers || !userId) {
+    if (!examSessionId || !userId) {
       return NextResponse.json(
-        { error: "Missing required fields: examSessionId, answers, userId" },
+        { error: "Missing required fields: examSessionId, userId" },
         { status: 400 }
       );
     }
@@ -22,13 +23,13 @@ export async function POST(request: NextRequest) {
     }
 
     const client = await clientPromise;
-    const db = client.db(dbName);
+    const db     = client.db(dbName);
     const examSessionsCol = db.collection("examSessions");
-    const questionsCol = db.collection<Question>("questions");
+    const questionsCol    = db.collection<Question>("questions");
 
-    // Get exam session
+    // ── Load session ─────────────────────────────────────────────────────────
     const examSession = await examSessionsCol.findOne({
-      _id: new ObjectId(examSessionId),
+      _id:    new ObjectId(examSessionId),
       userId: new ObjectId(userId),
     });
 
@@ -36,97 +37,105 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Exam session not found" }, { status: 404 });
     }
 
-    if (examSession.status === "completed") {
+    // Guard against duplicate submissions (completed OR already flagged+submitted)
+    if (examSession.status === "completed" || examSession.status === "flagged") {
       return NextResponse.json({ error: "Exam already submitted" }, { status: 400 });
     }
 
-    const wasFlagged = examSession.wasFlagged || false;
-    const violations = examSession.violations || [];
-    const violationCount = examSession.violationCount || 0;
+    const wasFlagged     = examSession.wasFlagged     ?? false;
+    const violations     = examSession.violations     ?? [];
+    const violationCount = examSession.violationCount ?? 0;
 
-    // Get all questions for this exam
+    // Answers may be partial (timer expiry) or empty (immediate auto-submit)
+    const finalAnswers: Record<string, string> = answers ?? {};
+
+    // ── Fetch questions ──────────────────────────────────────────────────────
     const questions = await questionsCol
-      .find({
-        _id: { $in: examSession.questionIds.map((id: any) => new ObjectId(id)) },
-      })
+      .find({ _id: { $in: examSession.questionIds.map((id: any) => new ObjectId(id)) } })
       .toArray();
 
-    // Grade the exam
+    // ── Grade ────────────────────────────────────────────────────────────────
     let correctCount = 0;
-    const results = questions.map((question) => {
-      const userAnswer = answers[question._id!.toString()];
-      const isCorrect = userAnswer === question.correctAnswer;
-      
+    const results = questions.map((q) => {
+      const userAnswer = finalAnswers[q._id!.toString()] ?? null;
+      const isCorrect  = userAnswer === q.correctAnswer;
       if (isCorrect) correctCount++;
-
       return {
-        questionId: question._id,
-        questionText: question.questionText,
-        userAnswer: userAnswer || null,
-        correctAnswer: question.correctAnswer,
+        questionId:    q._id,
+        questionText:  q.questionText,
+        userAnswer,
+        correctAnswer: q.correctAnswer,
         isCorrect,
-        difficulty: question.difficulty,
-        category: question.category,
-        explanation: question.explanation,
+        difficulty:    q.difficulty,
+        category:      q.category,
+        subject:       q.subject,   // included for BSABEN area exam breakdowns
+        explanation:   q.explanation,
         options: {
-          A: question.optionA,
-          B: question.optionB,
-          C: question.optionC,
-          D: question.optionD,
+          A: q.optionA,
+          B: q.optionB,
+          C: q.optionC,
+          D: q.optionD,
         },
       };
     });
 
-    const score = Math.round((correctCount / questions.length) * 100);
+    const total       = questions.length;
+    const score       = total > 0 ? Math.round((correctCount / total) * 100) : 0;
     const completedAt = new Date();
+    const timeTakenSec = Math.round(
+      (completedAt.getTime() - new Date(examSession.startedAt).getTime()) / 1000
+    );
 
-    // Update exam session
+    // Final status: flagged if wasFlagged (violation auto-submit), else completed
+    const finalStatus = wasFlagged ? "flagged" : "completed";
+
+    // ── Update session ───────────────────────────────────────────────────────
     await examSessionsCol.updateOne(
       { _id: new ObjectId(examSessionId) },
       {
         $set: {
-          answers,
+          answers:        finalAnswers,
           completedAt,
           score,
           correctCount,
-          totalQuestions: questions.length,
-          status: wasFlagged ? "flagged" : "completed",
-          updatedAt: completedAt,
+          totalQuestions: total,
+          status:         finalStatus,
+          updatedAt:      completedAt,
         },
       }
     );
 
-    // Save to exam results collection for history
-    const examResultsCol = db.collection("examResults");
-    await examResultsCol.insertOne({
+    // ── Persist to examResults ───────────────────────────────────────────────
+    await db.collection("examResults").insertOne({
       examSessionId: new ObjectId(examSessionId),
-      userId: examSession.userId,
-      userName: examSession.userName,
-      course: examSession.course,
-      area: examSession.area,
-      subject: examSession.subject,
+      userId:        examSession.userId,
+      userName:      examSession.userName,
+      course:        examSession.course,
+      ...(examSession.area    && { area:    examSession.area }),
+      ...(examSession.subject && { subject: examSession.subject }),
       score,
       correctCount,
-      totalQuestions: questions.length,
-      percentage: score,
-      startedAt: examSession.startedAt,
+      totalQuestions: total,
+      percentage:     score,
+      startedAt:      examSession.startedAt,
       completedAt,
-      timeTaken: Math.round((completedAt.getTime() - examSession.startedAt.getTime()) / 1000), // seconds
+      timeTaken:      timeTakenSec,           // seconds
       results,
       violations,
       violationCount,
       wasFlagged,
-      createdAt: completedAt,
+      status:         finalStatus,
+      createdAt:      completedAt,
     });
 
     return NextResponse.json({
       score,
       correctCount,
-      totalQuestions: questions.length,
-      percentage: score,
+      totalQuestions:  total,
+      percentage:      score,
       results,
       completedAt,
-      timeTaken: Math.round((completedAt.getTime() - examSession.startedAt.getTime()) / 60000), // minutes
+      timeTaken:       Math.round(timeTakenSec / 60), // minutes for client display
       violations,
       violationCount,
       wasFlagged,

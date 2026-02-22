@@ -16,7 +16,15 @@ export async function PUT(request: NextRequest, { params }: Params) {
 
     const body = await request.json();
     const { userId, _id, createdBy, createdByName, createdAt, ...updates } = body;
-    const { name, description, course, area } = updates;
+    const { name, description, course, area, timerHH, timerMM, timerSS } = updates;
+
+    // Compute timer only when at least one field is present in the payload
+    const hasTimer = timerHH !== undefined || timerMM !== undefined || timerSS !== undefined;
+    const timer = hasTimer
+      ? (parseInt(timerHH || "0") * 3600) +
+        (parseInt(timerMM || "0") * 60) +
+         parseInt(timerSS  || "0")
+      : undefined;
 
     if (!userId) {
       return NextResponse.json({ error: "userId is required" }, { status: 400 });
@@ -75,20 +83,18 @@ export async function PUT(request: NextRequest, { params }: Params) {
     // Check for duplicate name if name is being changed
     if (name && name !== subject.name) {
       const targetArea = area !== undefined ? area : subject.area;
-      
+
       const duplicateFilter: any = {
         _id: { $ne: new ObjectId(id) },
         name: { $regex: `^${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, $options: "i" },
         course: targetCourse,
       };
 
-      // For BSABEN, check within the same area
       if (targetCourse === "BSABEN") {
         duplicateFilter.area = targetArea;
       }
 
       const duplicate = await subjectsCol.findOne(duplicateFilter);
-
       if (duplicate) {
         const errorMsg = targetCourse === "BSABEN"
           ? "A subject with this name already exists in this area."
@@ -97,20 +103,18 @@ export async function PUT(request: NextRequest, { params }: Params) {
       }
     }
 
-    // Build update object - only include fields that should be updated
-    const updateData: any = {
-      updatedAt: new Date(),
-    };
+    // Build update object
+    const updateData: any = { updatedAt: new Date() };
 
-    if (name !== undefined) updateData.name = name.trim();
+    if (name        !== undefined) updateData.name        = name.trim();
     if (description !== undefined) updateData.description = description?.trim() || undefined;
-    if (course !== undefined) updateData.course = course;
-    
+    if (course      !== undefined) updateData.course      = course;
+    if (timer       !== undefined) updateData.timer       = timer;
+
     // Handle area field
     if (targetCourse === "BSABEN") {
       if (area !== undefined) updateData.area = area;
     } else {
-      // BSGE - remove area if it exists
       updateData.area = undefined;
     }
 
@@ -151,9 +155,9 @@ export async function DELETE(request: NextRequest, { params }: Params) {
 
     const client = await clientPromise;
     const db = client.db(dbName);
-    const subjectsCol = db.collection<Subject>("subjects");
+    const subjectsCol  = db.collection<Subject>("subjects");
     const questionsCol = db.collection("questions");
-    const usersCol = db.collection<User>("users");
+    const usersCol     = db.collection<User>("users");
 
     // Check user authorization
     const user = await usersCol.findOne({ _id: new ObjectId(userId) });
@@ -171,11 +175,10 @@ export async function DELETE(request: NextRequest, { params }: Params) {
       return NextResponse.json({ error: "Subject not found" }, { status: 404 });
     }
 
-    // Check if there are questions associated with this subject
-    // CRITICAL FIX: Filter by area for BSABEN subjects
+    // Build question filter (area-aware for BSABEN)
     const questionFilter: any = {
       subject: subject.name,
-      course: subject.course,
+      course:  subject.course,
     };
 
     if (subject.course === "BSABEN" && subject.area) {
@@ -199,9 +202,7 @@ export async function DELETE(request: NextRequest, { params }: Params) {
       return NextResponse.json({ error: "Failed to delete subject" }, { status: 500 });
     }
 
-    return NextResponse.json({
-      message: "Subject deleted successfully",
-    });
+    return NextResponse.json({ message: "Subject deleted successfully" });
   } catch (error) {
     console.error("DELETE /api/subjects/[id] error:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

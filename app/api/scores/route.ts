@@ -2,69 +2,86 @@ import { NextRequest, NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import clientPromise, { dbName } from "@/lib/mongodb";
 
+// ─── GET /api/scores ───────────────────────────────────────────────────────────
+// Per-student score breakdown from examResults
+// Admin → any course; Faculty → scoped to their own course
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    
-    // Pagination
-    const page = parseInt(searchParams.get("page") || "1");
-    const limit = parseInt(searchParams.get("limit") || "20");
-    const skip = (page - 1) * limit;
+    const page   = Math.max(1, parseInt(searchParams.get("page")  ?? "1",  10));
+    const limit  = Math.min(100, Math.max(1, parseInt(searchParams.get("limit") ?? "20", 10)));
+    const skip   = (page - 1) * limit;
+    const status = searchParams.get("status");   // excellent | good | needs-improvement | null
+    const search = searchParams.get("search") ?? "";
+    const userId = searchParams.get("userId");
 
-    // Filters
-    const course = searchParams.get("course") || "BSABEN";
-    const status = searchParams.get("status"); // "excellent" | "good" | "needs-improvement" | null
-    const searchQuery = searchParams.get("search") || "";
-
+    // ── Auth / course scoping ──────────────────────────────────────────────────
     const client = await clientPromise;
-    const db = client.db(dbName);
-    const responsesCol = db.collection("responses");
-    const usersCol = db.collection("users");
+    const db     = client.db(dbName);
 
-    // Build aggregation pipeline to calculate student scores
+    let allowedCourse: string | null = null;   // null = admin (all courses)
+    const courseParam = searchParams.get("course") ?? "BSABEN";
+
+    if (userId) {
+      if (!ObjectId.isValid(userId)) {
+        return NextResponse.json({ error: "Invalid userId" }, { status: 400 });
+      }
+      const user = await db.collection("users").findOne({ _id: new ObjectId(userId) });
+      if (!user) {
+        return NextResponse.json({ error: "User not found" }, { status: 404 });
+      }
+      if (user.role !== "admin" && user.role !== "faculty") {
+        return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
+      }
+      if (user.role === "faculty") {
+        allowedCourse = (user as any).course;   // faculty locked to their course
+      }
+    }
+
+    const course = allowedCourse ?? courseParam;
+
+    // ── Build pipeline ─────────────────────────────────────────────────────────
     const pipeline: any[] = [
-      // Filter by course
-      { $match: { course } },
-      
-      // Group by student to calculate their stats
+      // Match completed/legacy exams for the scoped course
+      {
+        $match: {
+          course,
+          $or: [
+            { status: { $in: ["completed", "flagged"] } },
+            { status: { $exists: false } },
+          ],
+        },
+      },
+
+      // Group per student — one doc per exam, so group by userId
       {
         $group: {
-          _id: "$studentId",
-          totalQuestions: { $sum: 1 },
-          correctAnswers: {
-            $sum: { $cond: ["$isCorrect", 1, 0] }
-          },
-          wrongAnswers: {
-            $sum: { $cond: ["$isCorrect", 0, 1] }
-          },
-          scores: {
-            $push: {
-              $cond: [
-                "$isCorrect",
-                100,
-                0
-              ]
-            }
-          },
-          lastExam: { $max: "$submittedAt" }
-        }
+          _id:            "$userId",
+          userName:       { $first: "$userName" },
+          examsTaken:     { $sum: 1 },
+          totalCorrect:   { $sum: "$correctCount" },
+          totalQuestions: { $sum: "$totalQuestions" },
+          scores:         { $push: "$percentage" },   // array of exam percentages
+          lastExam:       { $max: "$completedAt" },
+        },
       },
-      
-      // Calculate average, highest, and lowest scores
+
+      // Derive averageScore, highestScore, lowestScore
       {
         $addFields: {
           averageScore: {
-            $multiply: [
-              { $divide: ["$correctAnswers", "$totalQuestions"] },
-              100
-            ]
+            $cond: [
+              { $eq: ["$totalQuestions", 0] },
+              0,
+              { $multiply: [{ $divide: ["$totalCorrect", "$totalQuestions"] }, 100] },
+            ],
           },
           highestScore: { $max: "$scores" },
-          lowestScore: { $min: "$scores" }
-        }
+          lowestScore:  { $min: "$scores" },
+        },
       },
-      
-      // Determine status based on average score
+
+      // Grade + status
       {
         $addFields: {
           status: {
@@ -73,110 +90,73 @@ export async function GET(request: NextRequest) {
                 { case: { $gte: ["$averageScore", 90] }, then: "excellent" },
                 { case: { $gte: ["$averageScore", 75] }, then: "good" },
               ],
-              default: "needs-improvement"
-            }
+              default: "needs-improvement",
+            },
           },
           grade: {
             $switch: {
               branches: [
                 { case: { $gte: ["$averageScore", 97] }, then: "A+" },
-                { case: { $gte: ["$averageScore", 93] }, then: "A" },
+                { case: { $gte: ["$averageScore", 93] }, then: "A"  },
                 { case: { $gte: ["$averageScore", 90] }, then: "A-" },
                 { case: { $gte: ["$averageScore", 87] }, then: "B+" },
-                { case: { $gte: ["$averageScore", 83] }, then: "B" },
+                { case: { $gte: ["$averageScore", 83] }, then: "B"  },
                 { case: { $gte: ["$averageScore", 80] }, then: "B-" },
                 { case: { $gte: ["$averageScore", 77] }, then: "C+" },
-                { case: { $gte: ["$averageScore", 73] }, then: "C" },
+                { case: { $gte: ["$averageScore", 73] }, then: "C"  },
                 { case: { $gte: ["$averageScore", 70] }, then: "C-" },
                 { case: { $gte: ["$averageScore", 67] }, then: "D+" },
-                { case: { $gte: ["$averageScore", 65] }, then: "D" },
+                { case: { $gte: ["$averageScore", 65] }, then: "D"  },
               ],
-              default: "F"
-            }
-          }
-        }
+              default: "F",
+            },
+          },
+        },
       },
-      
-      // Filter by status if provided
+
+      // Filter by status
       ...(status ? [{ $match: { status } }] : []),
-      
-      // Lookup user details
-      {
-        $lookup: {
-          from: "users",
-          let: { studentId: "$_id" },
-          pipeline: [
-            {
-              $match: {
-                $expr: { $eq: ["$studentId", "$$studentId"] }
-              }
-            }
-          ],
-          as: "userDetails"
-        }
-      },
-      
-      // Unwind user details
-      {
-        $unwind: {
-          path: "$userDetails",
-          preserveNullAndEmptyArrays: true
-        }
-      },
-      
-      // Filter by search query
-      ...(searchQuery ? [
-        {
-          $match: {
-            $or: [
-              { "_id": { $regex: searchQuery, $options: "i" } },
-              { "userDetails.name": { $regex: searchQuery, $options: "i" } }
-            ]
-          }
-        }
-      ] : []),
-      
-      // Project final shape
+
+      // Search by stored userName (no join needed — userName is on every examResult doc)
+      ...(search
+        ? [{ $match: { userName: { $regex: search, $options: "i" } } }]
+        : []),
+
+      // Shape output
       {
         $project: {
-          _id: 0,
-          studentId: "$_id",
-          name: { $ifNull: ["$userDetails.name", "Unknown Student"] },
-          course: { $literal: course },
-          examsTaken: "$totalQuestions",
+          _id:          0,
+          studentId:    { $toString: "$_id" },
+          name:         { $ifNull: ["$userName", "Unknown Student"] },
+          course:       { $literal: course },
+          examsTaken:   1,
           averageScore: { $round: ["$averageScore", 1] },
-          highestScore: "$highestScore",
-          lowestScore: "$lowestScore",
-          status: 1,
-          grade: 1,
-          lastExam: "$lastExam"
-        }
+          highestScore: 1,
+          lowestScore:  1,
+          status:       1,
+          grade:        1,
+          lastExam:     1,
+        },
       },
-      
-      // Sort by average score descending
-      { $sort: { averageScore: -1 } }
+
+      { $sort: { averageScore: -1 } },
     ];
 
-    // Get total count before pagination
-    const countPipeline = [...pipeline, { $count: "total" }];
-    const countResult = await responsesCol.aggregate(countPipeline).toArray();
-    const total = countResult[0]?.total || 0;
+    // Count + paginated fetch in parallel
+    const [countResult, scores] = await Promise.all([
+      db.collection("examResults")
+        .aggregate([...pipeline, { $count: "total" }])
+        .toArray(),
+      db.collection("examResults")
+        .aggregate([...pipeline, { $skip: skip }, { $limit: limit }])
+        .toArray(),
+    ]);
 
-    // Add pagination
-    pipeline.push({ $skip: skip });
-    pipeline.push({ $limit: limit });
-
-    // Execute query
-    const scores = await responsesCol.aggregate(pipeline).toArray();
+    const total = countResult[0]?.total ?? 0;
 
     return NextResponse.json({
       scores,
-      pagination: {
-        total,
-        page,
-        limit,
-        totalPages: Math.ceil(total / limit)
-      }
+      pagination: { total, page, limit, totalPages: Math.ceil(total / limit) },
     });
   } catch (error) {
     console.error("GET /api/scores error:", error);

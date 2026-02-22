@@ -1,38 +1,63 @@
 import { NextRequest, NextResponse } from "next/server";
+import { ObjectId } from "mongodb";
 import clientPromise, { dbName } from "@/lib/mongodb";
 
+// ─── GET /api/scores/export ────────────────────────────────────────────────────
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const course = searchParams.get("course") || "BSABEN";
-    const status = searchParams.get("status");
-    const searchQuery = searchParams.get("search") || "";
+    const status  = searchParams.get("status");
+    const search  = searchParams.get("search") ?? "";
+    const userId  = searchParams.get("userId");
 
     const client = await clientPromise;
-    const db = client.db(dbName);
-    const responsesCol = db.collection("responses");
+    const db     = client.db(dbName);
 
-    // Build aggregation pipeline
+    // ── Auth / course scoping ──────────────────────────────────────────────────
+    let allowedCourse: string | null = null;
+    const courseParam = searchParams.get("course") ?? "BSABEN";
+
+    if (userId && ObjectId.isValid(userId)) {
+      const user = await db.collection("users").findOne({ _id: new ObjectId(userId) });
+      if (user?.role === "faculty") allowedCourse = (user as any).course;
+    }
+
+    const course = allowedCourse ?? courseParam;
+
+    // ── Same pipeline as /api/scores (no skip/limit) ───────────────────────────
     const pipeline: any[] = [
-      { $match: { course } },
+      {
+        $match: {
+          course,
+          $or: [
+            { status: { $in: ["completed", "flagged"] } },
+            { status: { $exists: false } },
+          ],
+        },
+      },
       {
         $group: {
-          _id: "$studentId",
-          totalQuestions: { $sum: 1 },
-          correctAnswers: { $sum: { $cond: ["$isCorrect", 1, 0] } },
-          wrongAnswers: { $sum: { $cond: ["$isCorrect", 0, 1] } },
-          scores: { $push: { $cond: ["$isCorrect", 100, 0] } },
-          lastExam: { $max: "$submittedAt" }
-        }
+          _id:            "$userId",
+          userName:       { $first: "$userName" },
+          examsTaken:     { $sum: 1 },
+          totalCorrect:   { $sum: "$correctCount" },
+          totalQuestions: { $sum: "$totalQuestions" },
+          scores:         { $push: "$percentage" },
+          lastExam:       { $max: "$completedAt" },
+        },
       },
       {
         $addFields: {
           averageScore: {
-            $multiply: [{ $divide: ["$correctAnswers", "$totalQuestions"] }, 100]
+            $cond: [
+              { $eq: ["$totalQuestions", 0] },
+              0,
+              { $multiply: [{ $divide: ["$totalCorrect", "$totalQuestions"] }, 100] },
+            ],
           },
           highestScore: { $max: "$scores" },
-          lowestScore: { $min: "$scores" }
-        }
+          lowestScore:  { $min: "$scores" },
+        },
       },
       {
         $addFields: {
@@ -42,102 +67,89 @@ export async function GET(request: NextRequest) {
                 { case: { $gte: ["$averageScore", 90] }, then: "excellent" },
                 { case: { $gte: ["$averageScore", 75] }, then: "good" },
               ],
-              default: "needs-improvement"
-            }
+              default: "needs-improvement",
+            },
           },
           grade: {
             $switch: {
               branches: [
                 { case: { $gte: ["$averageScore", 97] }, then: "A+" },
-                { case: { $gte: ["$averageScore", 93] }, then: "A" },
+                { case: { $gte: ["$averageScore", 93] }, then: "A"  },
                 { case: { $gte: ["$averageScore", 90] }, then: "A-" },
                 { case: { $gte: ["$averageScore", 87] }, then: "B+" },
-                { case: { $gte: ["$averageScore", 83] }, then: "B" },
+                { case: { $gte: ["$averageScore", 83] }, then: "B"  },
                 { case: { $gte: ["$averageScore", 80] }, then: "B-" },
                 { case: { $gte: ["$averageScore", 77] }, then: "C+" },
-                { case: { $gte: ["$averageScore", 73] }, then: "C" },
+                { case: { $gte: ["$averageScore", 73] }, then: "C"  },
                 { case: { $gte: ["$averageScore", 70] }, then: "C-" },
+                { case: { $gte: ["$averageScore", 67] }, then: "D+" },
+                { case: { $gte: ["$averageScore", 65] }, then: "D"  },
               ],
-              default: "F"
-            }
-          }
-        }
+              default: "F",
+            },
+          },
+        },
       },
       ...(status ? [{ $match: { status } }] : []),
-      {
-        $lookup: {
-          from: "users",
-          let: { studentId: "$_id" },
-          pipeline: [{ $match: { $expr: { $eq: ["$studentId", "$$studentId"] } } }],
-          as: "userDetails"
-        }
-      },
-      { $unwind: { path: "$userDetails", preserveNullAndEmptyArrays: true } },
-      ...(searchQuery ? [
-        {
-          $match: {
-            $or: [
-              { "_id": { $regex: searchQuery, $options: "i" } },
-              { "userDetails.name": { $regex: searchQuery, $options: "i" } }
-            ]
-          }
-        }
-      ] : []),
+      ...(search  ? [{ $match: { userName: { $regex: search, $options: "i" } } }] : []),
       {
         $project: {
-          studentId: "$_id",
-          name: { $ifNull: ["$userDetails.name", "Unknown"] },
-          examsTaken: "$totalQuestions",
+          _id:          0,
+          studentId:    { $toString: "$_id" },
+          name:         { $ifNull: ["$userName", "Unknown Student"] },
+          course:       { $literal: course },
+          examsTaken:   1,
           averageScore: { $round: ["$averageScore", 1] },
           highestScore: 1,
-          lowestScore: 1,
-          grade: 1,
-          status: 1,
-          lastExam: 1
-        }
+          lowestScore:  1,
+          status:       1,
+          grade:        1,
+          lastExam:     1,
+        },
       },
-      { $sort: { averageScore: -1 } }
+      { $sort: { averageScore: -1 } },
     ];
 
-    const scores = await responsesCol.aggregate(pipeline).toArray();
+    const rows = await db.collection("examResults").aggregate(pipeline).toArray();
 
-    // Generate CSV
     const headers = [
-      "Student ID",
-      "Name",
-      "Course",
-      "Exams Taken",
-      "Average Score (%)",
-      "Highest Score (%)",
-      "Lowest Score (%)",
-      "Grade",
-      "Status",
-      "Last Exam"
+      "Student ID", "Name", "Course", "Exams Taken",
+      "Average Score", "Highest Score", "Lowest Score",
+      "Grade", "Status", "Last Exam",
     ];
 
-    const csvRows = [
+    const escape = (v: any) => {
+      const s = v == null ? "" : String(v);
+      return s.includes(",") || s.includes('"') || s.includes("\n")
+        ? `"${s.replace(/"/g, '""')}"`
+        : s;
+    };
+
+    const csvLines = [
       headers.join(","),
-      ...scores.map(s => [
-        s.studentId,
-        `"${s.name}"`,
-        course,
-        s.examsTaken,
-        s.averageScore,
-        s.highestScore,
-        s.lowestScore,
-        s.grade,
-        s.status,
-        new Date(s.lastExam).toLocaleDateString()
-      ].join(","))
+      ...rows.map(r =>
+        [
+          r.studentId,
+          r.name,
+          r.course,
+          r.examsTaken,
+          `${r.averageScore}%`,
+          `${r.highestScore}%`,
+          `${r.lowestScore}%`,
+          r.grade,
+          r.status,
+          r.lastExam ? new Date(r.lastExam).toLocaleDateString() : "",
+        ]
+          .map(escape)
+          .join(",")
+      ),
     ];
 
-    const csv = csvRows.join("\n");
-
-    return new NextResponse(csv, {
+    return new NextResponse(csvLines.join("\n"), {
       headers: {
-        "Content-Type": "text/csv",
-        "Content-Disposition": `attachment; filename="scores-${course}-${Date.now()}.csv"`
-      }
+        "Content-Type":        "text/csv",
+        "Content-Disposition": `attachment; filename="scores-${course}-${Date.now()}.csv"`,
+      },
     });
   } catch (error) {
     console.error("GET /api/scores/export error:", error);
