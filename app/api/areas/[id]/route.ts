@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import clientPromise, { dbName } from "@/lib/mongodb";
 import { Area } from "@/models/Questions";
+import { Archive } from "@/models/Archive";
 import { User } from "@/models/User";
 
 // ─── PUT /api/areas/[id] ────────────────────────────────────────────────────
@@ -107,6 +108,7 @@ export async function DELETE(
     const db = client.db(dbName);
     const areasCol  = db.collection<Area>("areas");
     const usersCol  = db.collection<User>("users");
+    const archivesCol = db.collection<Archive>("archives");
 
     // Auth check
     const user = await usersCol.findOne({ _id: new ObjectId(userId) });
@@ -123,9 +125,29 @@ export async function DELETE(
       return NextResponse.json({ error: "Area not found" }, { status: 404 });
     }
 
+    // Archive before deleting
+    const now = new Date();
+    const archiveEntry: Archive = {
+      type:               "area",
+      title:              area.name,
+      course:             area.course,
+      originalId:         new ObjectId(id),
+      originalCollection: "areas",
+      archivedBy:         new ObjectId(userId),
+      archivedByName:     user.name,
+      archivedByRole:     user.role,
+      archivedAt:         now,
+      reason:             "Deleted by user",
+      originalData:       area,
+      canRestore:         true,
+      createdAt:          now,
+      updatedAt:          now,
+    };
+
+    await archivesCol.insertOne(archiveEntry);
     await areasCol.deleteOne({ _id: new ObjectId(id) });
 
-    return NextResponse.json({ success: true, message: "Area deleted successfully" });
+    return NextResponse.json({ success: true, message: "Area archived and deleted successfully" });
   } catch (error) {
     console.error("DELETE /api/areas/[id] error:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

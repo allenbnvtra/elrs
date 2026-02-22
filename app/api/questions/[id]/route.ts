@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import clientPromise, { dbName } from "@/lib/mongodb";
 import { Question, CourseType, DifficultyType, CorrectAnswer } from "@/models/Questions";
+import { Archive } from "@/models/Archive";
 import { User } from "@/models/User";
 
 type Params = { params: Promise<{ id: string }> };
@@ -135,20 +136,43 @@ export async function DELETE(request: NextRequest, { params }: Params) {
     const client = await clientPromise;
     const db = client.db(dbName);
     const questionsCol = db.collection<Question>("questions");
-    const usersCol = db.collection<User>("users");
+    const usersCol     = db.collection<User>("users");
+    const archivesCol  = db.collection<Archive>("archives");
 
-    const user = await usersCol.findOne({ _id: new ObjectId(userId) });
+    const [user, question] = await Promise.all([
+      usersCol.findOne({ _id: new ObjectId(userId) }),
+      questionsCol.findOne({ _id: new ObjectId(id) }),
+    ]);
+
     if (!user) return NextResponse.json({ error: "User not found" }, { status: 404 });
     if (user.role !== "admin" && user.role !== "faculty") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
     }
+    if (!question) return NextResponse.json({ error: "Question not found" }, { status: 404 });
 
-    const result = await questionsCol.deleteOne({ _id: new ObjectId(id) });
-    if (result.deletedCount === 0) {
-      return NextResponse.json({ error: "Question not found" }, { status: 404 });
-    }
+    // Archive before deleting
+    const now = new Date();
+    const archiveEntry: Archive = {
+      type:               "questions",
+      title:              question.questionText?.slice(0, 120) ?? "Untitled Question",
+      course:             question.course,
+      originalId:         new ObjectId(id),
+      originalCollection: "questions",
+      archivedBy:         new ObjectId(userId),
+      archivedByName:     user.name,
+      archivedByRole:     user.role,
+      archivedAt:         now,
+      reason:             "Deleted by user",
+      originalData:       question,
+      canRestore:         true,
+      createdAt:          now,
+      updatedAt:          now,
+    };
 
-    return NextResponse.json({ message: "Question deleted successfully" });
+    await archivesCol.insertOne(archiveEntry);
+    await questionsCol.deleteOne({ _id: new ObjectId(id) });
+
+    return NextResponse.json({ message: "Question archived and deleted successfully" });
   } catch (error) {
     console.error("DELETE /api/questions/[id] error:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

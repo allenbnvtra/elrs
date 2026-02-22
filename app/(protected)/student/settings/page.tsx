@@ -467,14 +467,6 @@ export default function StudentSettingsPage() {
                       }`} />
                     </button>
                   </div>
-                  {twoFactorAuth && (
-                    <div className="bg-emerald-50 border border-emerald-200 rounded-lg xs:rounded-xl p-3 xs:p-4 animate-in fade-in slide-in-from-top-2 duration-300">
-                      <p className="text-[10px] xs:text-xs font-bold text-emerald-800 flex items-center gap-1.5 xs:gap-2">
-                        <Check size={14} className="xs:w-4 xs:h-4" />
-                        Two-factor authentication is enabled
-                      </p>
-                    </div>
-                  )}
                 </div>
 
                 {/* Active Sessions */}

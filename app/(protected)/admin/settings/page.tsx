@@ -75,7 +75,6 @@ export default function SettingsPage() {
       });
 
       const data = await response.json();
-      console.log(data)
 
       if (!response.ok) {
         throw new Error(data.error || "Failed to update profile");
@@ -194,21 +193,6 @@ export default function SettingsPage() {
               })}
             </nav>
           </div>
-
-          {/* QUICK INFO CARD */}
-          <div className="hidden lg:block mt-4 xs:mt-5 sm:mt-6 bg-blue-50 rounded-xl xs:rounded-2xl border border-blue-200 p-4 xs:p-5">
-            <div className="flex items-start gap-2 xs:gap-3 mb-2 xs:mb-3">
-              <div className="w-8 h-8 xs:w-10 xs:h-10 bg-blue-600 rounded-lg xs:rounded-xl flex items-center justify-center text-white flex-shrink-0">
-                <Info size={16} className="xs:w-5 xs:h-5" />
-              </div>
-              <div>
-                <h4 className="font-black text-gray-900 text-xs xs:text-sm mb-1">Pro Tip</h4>
-                <p className="text-[10px] xs:text-xs text-gray-600 leading-relaxed">
-                  Enable two-factor authentication to enhance your account security.
-                </p>
-              </div>
-            </div>
-          </div>
         </div>
 
         {/* MAIN CONTENT AREA */}
@@ -236,26 +220,6 @@ export default function SettingsPage() {
                     <p className="text-sm font-semibold">{profileError}</p>
                   </div>
                 )}
-
-                {/* Profile Picture */}
-                <div>
-                  <label className="block text-xs xs:text-sm font-bold text-gray-700 mb-2 xs:mb-3">Profile Picture</label>
-                  <div className="flex items-center gap-3 xs:gap-4">
-                    <div className="w-16 h-16 xs:w-20 xs:h-20 rounded-full bg-gradient-to-br from-[#7d1a1a] to-[#3d0d0d] flex items-center justify-center text-white font-black text-xl xs:text-2xl shadow-lg flex-shrink-0">
-                      {getUserInitials()}
-                    </div>
-                    <div className="flex-1">
-                      <button 
-                        type="button"
-                        className="px-3 xs:px-4 py-2 xs:py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg xs:rounded-xl font-bold text-[10px] xs:text-xs transition-all active:scale-95"
-                      >
-                        <Upload size={14} className="inline mr-1.5 xs:mr-2 xs:w-4 xs:h-4" />
-                        Change Photo
-                      </button>
-                      <p className="text-[9px] xs:text-[10px] text-gray-500 mt-1.5 xs:mt-2">JPG, PNG or GIF. Max 2MB</p>
-                    </div>
-                  </div>
-                </div>
 
                 {/* Form Fields */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 xs:gap-5 sm:gap-6">
@@ -435,42 +399,6 @@ export default function SettingsPage() {
                     </button>
                   </div>
                 </form>
-
-                {/* Two-Factor Authentication */}
-                <div className="border-t border-gray-100 pt-5 xs:pt-6">
-                  <div className="flex items-start justify-between gap-3 xs:gap-4 mb-3 xs:mb-4">
-                    <div className="flex items-start gap-2 xs:gap-3">
-                      <div className="w-10 h-10 xs:w-12 xs:h-12 bg-emerald-50 rounded-xl xs:rounded-2xl flex items-center justify-center text-emerald-600 flex-shrink-0">
-                        <Smartphone size={18} className="xs:w-5 xs:h-5 sm:w-6 sm:h-6" />
-                      </div>
-                      <div>
-                        <h3 className="text-sm xs:text-base font-black text-gray-900 mb-0.5 xs:mb-1">Two-Factor Authentication</h3>
-                        <p className="text-[10px] xs:text-xs text-gray-500 leading-relaxed">Add an extra layer of security to your account</p>
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setTwoFactorAuth(!twoFactorAuth)}
-                      className={`relative inline-flex h-6 w-11 xs:h-7 xs:w-12 items-center rounded-full transition-colors flex-shrink-0 ${
-                        twoFactorAuth ? "bg-emerald-600" : "bg-gray-200"
-                      }`}
-                    >
-                      <span
-                        className={`inline-block h-4 w-4 xs:h-5 xs:w-5 transform rounded-full bg-white transition-transform ${
-                          twoFactorAuth ? "translate-x-6 xs:translate-x-6" : "translate-x-1"
-                        }`}
-                      />
-                    </button>
-                  </div>
-                  {twoFactorAuth && (
-                    <div className="bg-emerald-50 border border-emerald-200 rounded-lg xs:rounded-xl p-3 xs:p-4 animate-in fade-in slide-in-from-top-2 duration-300">
-                      <p className="text-[10px] xs:text-xs font-bold text-emerald-800 flex items-center gap-1.5 xs:gap-2">
-                        <Check size={14} className="xs:w-4 xs:h-4" />
-                        Two-factor authentication is enabled
-                      </p>
-                    </div>
-                  )}
-                </div>
 
                 {/* Sessions */}
                 <div className="border-t border-gray-100 pt-5 xs:pt-6">

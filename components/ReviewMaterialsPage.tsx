@@ -54,7 +54,6 @@ export default function ReviewMaterialsPage() {
   const { user } = useAuth();
   const observerTarget = useRef<HTMLDivElement>(null);
   
-  // For students and faculty, lock to their course. Admin can switch courses.
   const [selectedCourse, setSelectedCourse] = useState<"BSGE" | "BSABEN">(
     user?.course || "BSABEN"
   );
@@ -64,7 +63,6 @@ export default function ReviewMaterialsPage() {
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
   const [visibleCount, setVisibleCount] = useState(ITEMS_PER_LOAD);
   
-  // Filters
   const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
   const [selectedAreas, setSelectedAreas] = useState<string[]>([]);
   const [selectedSubjects, setSelectedSubjects] = useState<string[]>([]);
@@ -83,6 +81,9 @@ export default function ReviewMaterialsPage() {
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState("");
 
+  // PDF Viewer state
+  const [viewingMaterial, setViewingMaterial] = useState<Material | null>(null);
+
   const [uploadForm, setUploadForm] = useState({
     title: "",
     description: "",
@@ -93,115 +94,76 @@ export default function ReviewMaterialsPage() {
     videoDuration: "",
   });
 
-  // Lock students and faculty to their course
   useEffect(() => {
     if (user && user.role !== "admin") {
-      // Students and faculty can only view their own course
       setSelectedCourse(user.course as "BSGE" | "BSABEN");
     }
   }, [user]);
 
-  // Fetch areas (only for BSABEN)
   const fetchAreas = async () => {
     if (selectedCourse === "BSGE") {
-      console.log("🚫 Skipping areas fetch for BSGE (no areas)");
       setAreas([]);
       return;
     }
-
     setLoadingAreas(true);
     try {
-      console.log("📁 Fetching areas for BSABEN");
       const response = await fetch(`/api/areas?course=${selectedCourse}`);
       const data = await response.json();
-      
-      if (response.ok) {
-        console.log(`✅ Fetched ${data.areas?.length || 0} areas`);
-        setAreas(data.areas || []);
-      } else {
-        console.error("❌ Failed to fetch areas:", data.error);
-        setAreas([]);
-      }
-    } catch (error) {
-      console.error("❌ Error fetching areas:", error);
+      setAreas(response.ok ? (data.areas || []) : []);
+    } catch {
       setAreas([]);
     } finally {
       setLoadingAreas(false);
     }
   };
 
-  // Fetch subjects
   const fetchSubjects = async () => {
     setLoadingSubjects(true);
     try {
-      console.log(`📚 Fetching subjects for ${selectedCourse}`);
       const response = await fetch(`/api/subjects?course=${selectedCourse}`);
       const data = await response.json();
-      
       if (response.ok) {
-        // Filter to ensure we only get subjects for the current course
         const courseSubjects = (data.subjects || []).filter(
           (s: Subject) => s.course === selectedCourse
         );
-        
-        console.log(`✅ Found ${courseSubjects.length} subjects for ${selectedCourse}:`, 
-          courseSubjects.map((s: Subject) => ({ name: s.name, area: s.area }))
-        );
-        
         setSubjects(courseSubjects);
       } else {
-        console.error("❌ Failed to fetch subjects:", data.error);
         setSubjects([]);
       }
-    } catch (error) {
-      console.error("❌ Error fetching subjects:", error);
+    } catch {
       setSubjects([]);
     } finally {
       setLoadingSubjects(false);
     }
   };
 
-  // Fetch materials - filtered by user's course
   const fetchMaterials = async () => {
     try {
       setIsLoading(true);
-      console.log(`📦 Fetching materials for ${selectedCourse}`);
       const queryParams = new URLSearchParams({ course: selectedCourse });
       const response = await fetch(`/api/review-materials?${queryParams}`);
       const data = await response.json();
-
-      if (response.ok) {
-        console.log(`✅ Fetched ${data.materials?.length || 0} materials`);
-        setMaterials(data.materials);
-      } else {
-        console.error("❌ Failed to fetch materials:", data.error);
-        setMaterials([]);
-      }
-    } catch (error) {
-      console.error("❌ Error fetching materials:", error);
+      setMaterials(response.ok ? data.materials : []);
+    } catch {
       setMaterials([]);
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Effects
   useEffect(() => {
-    console.log(`🔄 Course changed to: ${selectedCourse}`);
     fetchAreas();
     fetchSubjects();
     fetchMaterials();
   }, [selectedCourse]);
 
   useEffect(() => {
-    console.log(`🔄 Resetting filters for course change to ${selectedCourse}`);
     setSelectedAreas([]);
     setSelectedSubjects([]);
     setSelectedTypes([]);
     setVisibleCount(ITEMS_PER_LOAD);
   }, [selectedCourse]);
 
-  // Filtered and sorted materials
   const filteredAndSortedMaterials = useMemo(() => {
     let filtered = materials.filter(item => {
       const matchesSearch = !searchQuery || 
@@ -211,12 +173,9 @@ export default function ReviewMaterialsPage() {
         (item.description && item.description.toLowerCase().includes(searchQuery.toLowerCase()));
 
       const matchesType = selectedTypes.length === 0 || selectedTypes.includes(item.type);
-      
-      // For BSGE: ignore area filter (no areas)
       const matchesArea = selectedCourse === "BSGE" || 
         selectedAreas.length === 0 || 
         (item.area && selectedAreas.includes(item.area));
-      
       const matchesSubject = selectedSubjects.length === 0 || selectedSubjects.includes(item.subject);
 
       return matchesSearch && matchesType && matchesArea && matchesSubject;
@@ -224,25 +183,13 @@ export default function ReviewMaterialsPage() {
 
     filtered.sort((a, b) => {
       let comparison = 0;
-      
       switch (sortField) {
-        case "title":
-          comparison = a.title.localeCompare(b.title);
-          break;
-        case "subject":
-          comparison = a.subject.localeCompare(b.subject);
-          break;
-        case "area":
-          comparison = (a.area || "").localeCompare(b.area || "");
-          break;
-        case "type":
-          comparison = a.type.localeCompare(b.type);
-          break;
-        case "createdAt":
-          comparison = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
-          break;
+        case "title": comparison = a.title.localeCompare(b.title); break;
+        case "subject": comparison = a.subject.localeCompare(b.subject); break;
+        case "area": comparison = (a.area || "").localeCompare(b.area || ""); break;
+        case "type": comparison = a.type.localeCompare(b.type); break;
+        case "createdAt": comparison = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(); break;
       }
-
       return sortDirection === "asc" ? comparison : -comparison;
     });
 
@@ -253,7 +200,6 @@ export default function ReviewMaterialsPage() {
     return filteredAndSortedMaterials.slice(0, visibleCount);
   }, [filteredAndSortedMaterials, visibleCount]);
 
-  // Infinite scroll observer
   useEffect(() => {
     const observer = new IntersectionObserver(
       (entries) => {
@@ -267,11 +213,7 @@ export default function ReviewMaterialsPage() {
       },
       { threshold: 0.1 }
     );
-
-    if (observerTarget.current) {
-      observer.observe(observerTarget.current);
-    }
-
+    if (observerTarget.current) observer.observe(observerTarget.current);
     return () => observer.disconnect();
   }, [visibleCount, filteredAndSortedMaterials.length]);
 
@@ -285,17 +227,8 @@ export default function ReviewMaterialsPage() {
   };
 
   const toggleFilter = (filterType: "type" | "area" | "subject", value: string) => {
-    const setters = {
-      type: setSelectedTypes,
-      area: setSelectedAreas,
-      subject: setSelectedSubjects,
-    };
-
-    setters[filterType](prev => 
-      prev.includes(value) 
-        ? prev.filter(v => v !== value)
-        : [...prev, value]
-    );
+    const setters = { type: setSelectedTypes, area: setSelectedAreas, subject: setSelectedSubjects };
+    setters[filterType](prev => prev.includes(value) ? prev.filter(v => v !== value) : [...prev, value]);
     setVisibleCount(ITEMS_PER_LOAD);
   };
 
@@ -309,50 +242,27 @@ export default function ReviewMaterialsPage() {
   const handleUpload = async () => {
     setUploadError("");
     setIsUploading(true);
-
     try {
       const formData = new FormData();
       formData.append("title", uploadForm.title);
       formData.append("description", uploadForm.description);
       formData.append("type", uploadType);
       formData.append("course", selectedCourse);
-      
-      // Only add area for BSABEN
-      if (selectedCourse === "BSABEN" && uploadForm.area) {
-        formData.append("area", uploadForm.area);
-      }
-      
+      if (selectedCourse === "BSABEN" && uploadForm.area) formData.append("area", uploadForm.area);
       formData.append("subject", uploadForm.subject);
       formData.append("userId", user?.id || "");
-
-      if (uploadType === "document" && uploadForm.file) {
-        formData.append("file", uploadForm.file);
-      } else if (uploadType === "video") {
+      if (uploadType === "document" && uploadForm.file) formData.append("file", uploadForm.file);
+      else if (uploadType === "video") {
         formData.append("videoUrl", uploadForm.videoUrl);
         formData.append("videoDuration", uploadForm.videoDuration);
       }
 
-      const response = await fetch("/api/review-materials/upload", {
-        method: "POST",
-        body: formData,
-      });
-
+      const response = await fetch("/api/review-materials/upload", { method: "POST", body: formData });
       const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || "Upload failed");
-      }
+      if (!response.ok) throw new Error(data.error || "Upload failed");
 
       setShowUploadModal(false);
-      setUploadForm({
-        title: "",
-        description: "",
-        area: "",
-        subject: "",
-        file: null,
-        videoUrl: "",
-        videoDuration: "",
-      });
+      setUploadForm({ title: "", description: "", area: "", subject: "", file: null, videoUrl: "", videoDuration: "" });
       fetchMaterials();
     } catch (error) {
       setUploadError(error instanceof Error ? error.message : "Upload failed");
@@ -363,44 +273,27 @@ export default function ReviewMaterialsPage() {
 
   const handleDelete = async (id: string) => {
     if (!confirm("Are you sure you want to delete this material?")) return;
-
     try {
-      const response = await fetch(`/api/review-materials/${id}?userId=${user?.id}`, {
-        method: "DELETE",
-      });
-
-      if (response.ok) {
-        fetchMaterials();
-      } else {
-        const data = await response.json();
-        alert(data.error || "Delete failed");
-      }
-    } catch (error) {
-      console.error("Error deleting material:", error);
+      const response = await fetch(`/api/review-materials/${id}?userId=${user?.id}`, { method: "DELETE" });
+      if (response.ok) fetchMaterials();
+      else { const data = await response.json(); alert(data.error || "Delete failed"); }
+    } catch {
       alert("Delete failed");
     }
   };
 
   const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
+    return new Date(dateString).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
   };
 
-  // Permission helpers
   const canManageMaterials = () => {
     if (!user) return false;
-    // Admin can manage all materials
     if (user.role === "admin") return true;
-    // Faculty can manage materials for their assigned course only
     if (user.role === "faculty" && user.course === selectedCourse) return true;
-    // Students cannot manage materials
     return false;
   };
 
-  const canSwitchCourse = () => {
-    // Only admins can switch between courses
-    return user?.role === "admin";
-  };
+  const canSwitchCourse = () => user?.role === "admin";
 
   const SortIcon = ({ field }: { field: SortField }) => {
     if (sortField !== field) return <ArrowUpDown size={14} className="text-gray-300" />;
@@ -411,7 +304,6 @@ export default function ReviewMaterialsPage() {
 
   const activeFilterCount = selectedTypes.length + selectedAreas.length + selectedSubjects.length;
 
-  // Get user role display text
   const getUserRoleText = () => {
     if (!user) return "";
     if (user.role === "student") return "Student";
@@ -419,16 +311,17 @@ export default function ReviewMaterialsPage() {
     return "Admin";
   };
 
+  // Build a safe viewer URL that suppresses the browser toolbar (best-effort)
+  const getPdfViewerUrl = (url: string) =>
+    `${url}#toolbar=0&navpanes=0&scrollbar=1&view=FitH`;
+
   return (
     <div className="h-full flex flex-col lg:flex-row gap-4 lg:gap-6 p-4 max-w-[1800px] mx-auto overflow-hidden">
       
       {/* MOBILE FILTER MODAL */}
       {showFiltersPanel && (
         <div className="fixed inset-0 z-50 lg:hidden">
-          <div 
-            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-            onClick={() => setShowFiltersPanel(false)}
-          />
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setShowFiltersPanel(false)} />
           <div className="absolute right-0 top-0 bottom-0 w-80 bg-white shadow-2xl overflow-y-auto animate-in slide-in-from-right duration-300">
             <div className="p-6 space-y-6">
               <div className="flex items-center justify-between pb-4 border-b border-gray-100">
@@ -436,33 +329,18 @@ export default function ReviewMaterialsPage() {
                   <Filter size={18} className="text-[#7d1a1a]" />
                   <h3 className="font-black text-lg text-slate-800">Filters</h3>
                   {activeFilterCount > 0 && (
-                    <span className="px-2 py-0.5 bg-[#7d1a1a] text-white text-xs font-bold rounded-full">
-                      {activeFilterCount}
-                    </span>
+                    <span className="px-2 py-0.5 bg-[#7d1a1a] text-white text-xs font-bold rounded-full">{activeFilterCount}</span>
                   )}
                 </div>
-                <button
-                  onClick={() => setShowFiltersPanel(false)}
-                  className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-                >
+                <button onClick={() => setShowFiltersPanel(false)} className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
                   <X size={20} />
                 </button>
               </div>
-
               <FilterContent 
-                selectedCourse={selectedCourse}
-                setSelectedCourse={setSelectedCourse}
-                user={user}
-                canSwitchCourse={canSwitchCourse()}
-                selectedTypes={selectedTypes}
-                toggleFilter={toggleFilter}
-                materials={materials}
-                selectedAreas={selectedAreas}
-                areas={areas}
-                loadingAreas={loadingAreas}
-                selectedSubjects={selectedSubjects}
-                subjects={subjects}
-                loadingSubjects={loadingSubjects}
+                selectedCourse={selectedCourse} setSelectedCourse={setSelectedCourse} user={user}
+                canSwitchCourse={canSwitchCourse()} selectedTypes={selectedTypes} toggleFilter={toggleFilter}
+                materials={materials} selectedAreas={selectedAreas} areas={areas} loadingAreas={loadingAreas}
+                selectedSubjects={selectedSubjects} subjects={subjects} loadingSubjects={loadingSubjects}
                 clearAllFilters={clearAllFilters}
               />
             </div>
@@ -479,33 +357,16 @@ export default function ReviewMaterialsPage() {
                 <Filter size={18} className="text-[#7d1a1a]" />
                 <h3 className="text-lg text-slate-800">Filters</h3>
                 {activeFilterCount > 0 && (
-                  <span className="px-2 py-0.5 bg-[#7d1a1a] text-white text-xs font-bold rounded-full">
-                    {activeFilterCount}
-                  </span>
+                  <span className="px-2 py-0.5 bg-[#7d1a1a] text-white text-xs font-bold rounded-full">{activeFilterCount}</span>
                 )}
               </div>
-              <button
-                onClick={clearAllFilters}
-                className="text-xs text-gray-500 hover:text-[#7d1a1a] font-medium"
-              >
-                Clear all
-              </button>
+              <button onClick={clearAllFilters} className="text-xs text-gray-500 hover:text-[#7d1a1a] font-medium">Clear all</button>
             </div>
-
             <FilterContent 
-              selectedCourse={selectedCourse}
-              setSelectedCourse={setSelectedCourse}
-              user={user}
-              canSwitchCourse={canSwitchCourse()}
-              selectedTypes={selectedTypes}
-              toggleFilter={toggleFilter}
-              materials={materials}
-              selectedAreas={selectedAreas}
-              areas={areas}
-              loadingAreas={loadingAreas}
-              selectedSubjects={selectedSubjects}
-              subjects={subjects}
-              loadingSubjects={loadingSubjects}
+              selectedCourse={selectedCourse} setSelectedCourse={setSelectedCourse} user={user}
+              canSwitchCourse={canSwitchCourse()} selectedTypes={selectedTypes} toggleFilter={toggleFilter}
+              materials={materials} selectedAreas={selectedAreas} areas={areas} loadingAreas={loadingAreas}
+              selectedSubjects={selectedSubjects} subjects={subjects} loadingSubjects={loadingSubjects}
               clearAllFilters={clearAllFilters}
             />
           </div>
@@ -524,9 +385,7 @@ export default function ReviewMaterialsPage() {
                 Academic Resources • {selectedCourse} • {getUserRoleText()}
               </span>
             </div>
-            <h1 className="text-xl sm:text-2xl lg:text-3xl font-black text-gray-900 tracking-tight">
-              Review Materials
-            </h1>
+            <h1 className="text-xl sm:text-2xl lg:text-3xl font-black text-gray-900 tracking-tight">Review Materials</h1>
             <p className="text-xs sm:text-sm text-gray-500 mt-1">
               {filteredAndSortedMaterials.length} materials • Showing {visibleMaterials.length}
             </p>
@@ -540,12 +399,9 @@ export default function ReviewMaterialsPage() {
               <Filter size={16} />
               <span className="sm:inline text-slate-800">Filters</span>
               {activeFilterCount > 0 && (
-                <span className="px-1.5 py-0.5 bg-[#7d1a1a] text-white text-xs font-bold rounded-full">
-                  {activeFilterCount}
-                </span>
+                <span className="px-1.5 py-0.5 bg-[#7d1a1a] text-white text-xs font-bold rounded-full">{activeFilterCount}</span>
               )}
             </button>
-
             {canManageMaterials() && (
               <button 
                 onClick={() => setShowUploadModal(true)}
@@ -571,10 +427,7 @@ export default function ReviewMaterialsPage() {
               className="w-full pl-9 sm:pl-12 pr-10 sm:pr-12 py-2 sm:py-3 bg-gray-50 border border-gray-200 rounded-lg sm:rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-[#7d1a1a]/20 focus:border-[#7d1a1a] transition-all"
             />
             {searchQuery && (
-              <button 
-                onClick={() => setSearchQuery("")}
-                className="absolute right-3 sm:right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-1"
-              >
+              <button onClick={() => setSearchQuery("")} className="absolute right-3 sm:right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-1">
                 <X size={16} />
               </button>
             )}
@@ -594,42 +447,22 @@ export default function ReviewMaterialsPage() {
               <div className="hidden lg:flex flex-col h-full">
                 <div className="bg-gray-50 border-b border-gray-200 px-4 xl:px-6 py-3 flex items-center gap-3 xl:gap-4 text-xs font-bold text-gray-600 uppercase tracking-wider flex-shrink-0">
                   <div className="w-8"></div>
-                  <button 
-                    onClick={() => handleSort("type")}
-                    className="w-20 xl:w-24 flex items-center gap-2 hover:text-[#7d1a1a] transition-colors"
-                  >
-                    Type
-                    <SortIcon field="type" />
+                  <button onClick={() => handleSort("type")} className="w-20 xl:w-24 flex items-center gap-2 hover:text-[#7d1a1a] transition-colors">
+                    Type <SortIcon field="type" />
                   </button>
-                  <button 
-                    onClick={() => handleSort("title")}
-                    className="flex-1 min-w-0 flex items-center gap-2 hover:text-[#7d1a1a] transition-colors"
-                  >
-                    Title
-                    <SortIcon field="title" />
+                  <button onClick={() => handleSort("title")} className="flex-1 min-w-0 flex items-center gap-2 hover:text-[#7d1a1a] transition-colors">
+                    Title <SortIcon field="title" />
                   </button>
                   {selectedCourse === "BSABEN" && (
-                    <button 
-                      onClick={() => handleSort("area")}
-                      className="w-32 xl:w-40 flex items-center gap-2 hover:text-[#7d1a1a] transition-colors"
-                    >
-                      Area
-                      <SortIcon field="area" />
+                    <button onClick={() => handleSort("area")} className="w-32 xl:w-40 flex items-center gap-2 hover:text-[#7d1a1a] transition-colors">
+                      Area <SortIcon field="area" />
                     </button>
                   )}
-                  <button 
-                    onClick={() => handleSort("subject")}
-                    className="w-36 xl:w-44 flex items-center gap-2 hover:text-[#7d1a1a] transition-colors"
-                  >
-                    Subject
-                    <SortIcon field="subject" />
+                  <button onClick={() => handleSort("subject")} className="w-36 xl:w-44 flex items-center gap-2 hover:text-[#7d1a1a] transition-colors">
+                    Subject <SortIcon field="subject" />
                   </button>
-                  <button 
-                    onClick={() => handleSort("createdAt")}
-                    className="w-28 xl:w-32 flex items-center gap-2 hover:text-[#7d1a1a] transition-colors"
-                  >
-                    Date
-                    <SortIcon field="createdAt" />
+                  <button onClick={() => handleSort("createdAt")} className="w-28 xl:w-32 flex items-center gap-2 hover:text-[#7d1a1a] transition-colors">
+                    Date <SortIcon field="createdAt" />
                   </button>
                   <div className="w-32 xl:w-36 text-right">Actions</div>
                 </div>
@@ -644,34 +477,25 @@ export default function ReviewMaterialsPage() {
                     >
                       <div className="w-8 flex items-center justify-center flex-shrink-0">
                         {item.type === "video" ? (
-                          <div className="p-1.5 bg-[#1A1A1A] rounded-lg">
-                            <Video size={14} className="text-white" />
-                          </div>
+                          <div className="p-1.5 bg-[#1A1A1A] rounded-lg"><Video size={14} className="text-white" /></div>
                         ) : (
-                          <div className="p-1.5 bg-[#7d1a1a]/10 rounded-lg">
-                            <FileText size={14} className="text-[#7d1a1a]" />
-                          </div>
+                          <div className="p-1.5 bg-[#7d1a1a]/10 rounded-lg"><FileText size={14} className="text-[#7d1a1a]" /></div>
                         )}
                       </div>
 
                       <div className="w-20 xl:w-24 flex-shrink-0">
                         <span className={`px-2 py-1 rounded-md text-[10px] xl:text-xs font-bold ${
-                          item.type === "video" 
-                            ? "bg-purple-100 text-purple-700"
-                            : "bg-blue-100 text-blue-700"
+                          item.type === "video" ? "bg-purple-100 text-purple-700" : "bg-blue-100 text-blue-700"
                         }`}>
                           {item.type === "video" ? "Video" : "Doc"}
                         </span>
                       </div>
 
                       <div className="flex-1 min-w-0">
-                        <h4 className="font-bold text-gray-900 text-sm truncate mb-0.5">
-                          {item.title}
-                        </h4>
+                        <h4 className="font-bold text-gray-900 text-sm truncate mb-0.5">{item.title}</h4>
                         {item.type === "video" && item.videoDuration && (
                           <div className="flex items-center gap-1 text-xs text-gray-400">
-                            <Clock size={10} />
-                            {item.videoDuration}
+                            <Clock size={10} />{item.videoDuration}
                           </div>
                         )}
                       </div>
@@ -679,9 +503,7 @@ export default function ReviewMaterialsPage() {
                       {selectedCourse === "BSABEN" && (
                         <div className="w-32 xl:w-40 flex-shrink-0">
                           {item.area ? (
-                            <span className="px-2 py-1 bg-gray-100 text-gray-700 rounded-md text-[10px] xl:text-xs font-medium truncate block">
-                              {item.area}
-                            </span>
+                            <span className="px-2 py-1 bg-gray-100 text-gray-700 rounded-md text-[10px] xl:text-xs font-medium truncate block">{item.area}</span>
                           ) : (
                             <span className="text-xs text-gray-400">—</span>
                           )}
@@ -689,55 +511,40 @@ export default function ReviewMaterialsPage() {
                       )}
 
                       <div className="w-36 xl:w-44 flex-shrink-0">
-                        <span className="px-2 py-1 bg-[#7d1a1a]/10 text-[#7d1a1a] rounded-md text-[10px] xl:text-xs font-medium truncate block">
-                          {item.subject}
-                        </span>
+                        <span className="px-2 py-1 bg-[#7d1a1a]/10 text-[#7d1a1a] rounded-md text-[10px] xl:text-xs font-medium truncate block">{item.subject}</span>
                       </div>
 
                       <div className="w-28 xl:w-32 flex-shrink-0">
-                        <div className="text-[10px] xl:text-xs text-gray-600">
-                          {formatDate(item.createdAt)}
-                        </div>
+                        <div className="text-[10px] xl:text-xs text-gray-600">{formatDate(item.createdAt)}</div>
                       </div>
 
                       <div className="w-32 xl:w-36 flex items-center justify-end gap-2 flex-shrink-0">
                         {canManageMaterials() && (
-                          <button 
-                            onClick={() => handleDelete(item._id)}
-                            className="p-1.5 xl:p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
-                            title="Delete"
-                          >
+                          <button onClick={() => handleDelete(item._id)} className="p-1.5 xl:p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all" title="Delete">
                             <Trash2 size={14} />
                           </button>
                         )}
                         {item.type === 'video' ? (
                           <a 
-                            href={item.videoUrl} 
-                            target="_blank" 
-                            rel="noopener noreferrer"
+                            href={item.videoUrl} target="_blank" rel="noopener noreferrer"
                             className="flex items-center gap-1 xl:gap-1.5 px-2 xl:px-3 py-1 xl:py-1.5 bg-[#7d1a1a] text-white rounded-lg font-bold text-[10px] xl:text-xs hover:shadow-lg hover:shadow-[#7d1a1a]/30 transition-all"
                           >
-                            <ExternalLink size={12} />
-                            Watch
+                            <ExternalLink size={12} />Watch
                           </a>
                         ) : (
-                          <a 
-                            href={item.fileUrl} 
-                            download={item.fileName}
+                          <button 
+                            onClick={() => setViewingMaterial(item)}
                             className="flex items-center gap-1 xl:gap-1.5 px-2 xl:px-3 py-1 xl:py-1.5 bg-[#7d1a1a] text-white rounded-lg font-bold text-[10px] xl:text-xs hover:shadow-lg hover:shadow-[#7d1a1a]/30 transition-all"
                           >
-                            <Download size={12} />
-                            Download
-                          </a>
+                            <Eye size={12} />View
+                          </button>
                         )}
                       </div>
                     </div>
                   ))}
 
                   <div ref={observerTarget} className="h-16 flex items-center justify-center">
-                    {isLoadingMore && (
-                      <Loader2 className="animate-spin text-[#7d1a1a]" size={20} />
-                    )}
+                    {isLoadingMore && <Loader2 className="animate-spin text-[#7d1a1a]" size={20} />}
                     {visibleCount >= filteredAndSortedMaterials.length && filteredAndSortedMaterials.length > 0 && (
                       <p className="text-xs text-gray-400">All materials loaded</p>
                     )}
@@ -748,52 +555,34 @@ export default function ReviewMaterialsPage() {
               {/* MOBILE CARD VIEW */}
               <div className="lg:hidden flex-1 overflow-y-auto p-3 space-y-3">
                 {visibleMaterials.map((item) => (
-                  <div 
-                    key={item._id}
-                    className="bg-gray-50 rounded-xl border border-gray-200 p-3 space-y-3"
-                  >
+                  <div key={item._id} className="bg-gray-50 rounded-xl border border-gray-200 p-3 space-y-3">
                     <div className="flex items-start gap-3">
                       <div className="flex-shrink-0">
                         {item.type === "video" ? (
-                          <div className="p-2 bg-[#1A1A1A] rounded-lg">
-                            <Video size={18} className="text-white" />
-                          </div>
+                          <div className="p-2 bg-[#1A1A1A] rounded-lg"><Video size={18} className="text-white" /></div>
                         ) : (
-                          <div className="p-2 bg-[#7d1a1a]/10 rounded-lg">
-                            <FileText size={18} className="text-[#7d1a1a]" />
-                          </div>
+                          <div className="p-2 bg-[#7d1a1a]/10 rounded-lg"><FileText size={18} className="text-[#7d1a1a]" /></div>
                         )}
                       </div>
-
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1">
                           <span className={`px-2 py-0.5 rounded text-[9px] font-bold ${
-                            item.type === "video" 
-                              ? "bg-purple-100 text-purple-700"
-                              : "bg-blue-100 text-blue-700"
+                            item.type === "video" ? "bg-purple-100 text-purple-700" : "bg-blue-100 text-blue-700"
                           }`}>
                             {item.type === "video" ? "Video" : "Document"}
                           </span>
                           {item.type === "video" && item.videoDuration && (
                             <div className="flex items-center gap-1 text-[9px] text-gray-500">
-                              <Clock size={10} />
-                              {item.videoDuration}
+                              <Clock size={10} />{item.videoDuration}
                             </div>
                           )}
                         </div>
-                        <h4 className="font-bold text-gray-900 text-sm leading-tight mb-2">
-                          {item.title}
-                        </h4>
-                        
+                        <h4 className="font-bold text-gray-900 text-sm leading-tight mb-2">{item.title}</h4>
                         <div className="flex flex-wrap items-center gap-1.5 text-[10px]">
                           {selectedCourse === "BSABEN" && item.area && (
-                            <span className="px-1.5 py-0.5 bg-white text-gray-600 rounded font-medium">
-                              {item.area}
-                            </span>
+                            <span className="px-1.5 py-0.5 bg-white text-gray-600 rounded font-medium">{item.area}</span>
                           )}
-                          <span className="px-1.5 py-0.5 bg-[#7d1a1a]/10 text-[#7d1a1a] rounded font-medium">
-                            {item.subject}
-                          </span>
+                          <span className="px-1.5 py-0.5 bg-[#7d1a1a]/10 text-[#7d1a1a] rounded font-medium">{item.subject}</span>
                           <span className="text-gray-400">•</span>
                           <span className="text-gray-500">{formatDate(item.createdAt)}</span>
                         </div>
@@ -802,42 +591,32 @@ export default function ReviewMaterialsPage() {
 
                     <div className="flex items-center gap-2 pt-2 border-t border-gray-200">
                       {canManageMaterials() && (
-                        <button 
-                          onClick={() => handleDelete(item._id)}
-                          className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
-                        >
+                        <button onClick={() => handleDelete(item._id)} className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all">
                           <Trash2 size={16} />
                         </button>
                       )}
                       <div className="flex-1"></div>
                       {item.type === 'video' ? (
                         <a 
-                          href={item.videoUrl} 
-                          target="_blank" 
-                          rel="noopener noreferrer"
+                          href={item.videoUrl} target="_blank" rel="noopener noreferrer"
                           className="flex items-center gap-1.5 px-4 py-2 bg-[#7d1a1a] text-white rounded-lg font-bold text-xs hover:shadow-lg transition-all"
                         >
-                          <ExternalLink size={14} />
-                          Watch Video
+                          <ExternalLink size={14} />Watch Video
                         </a>
                       ) : (
-                        <a 
-                          href={item.fileUrl} 
-                          download={item.fileName}
+                        <button 
+                          onClick={() => setViewingMaterial(item)}
                           className="flex items-center gap-1.5 px-4 py-2 bg-[#7d1a1a] text-white rounded-lg font-bold text-xs hover:shadow-lg transition-all"
                         >
-                          <Download size={14} />
-                          Download
-                        </a>
+                          <Eye size={14} />View PDF
+                        </button>
                       )}
                     </div>
                   </div>
                 ))}
 
                 <div ref={observerTarget} className="h-16 flex items-center justify-center">
-                  {isLoadingMore && (
-                    <Loader2 className="animate-spin text-[#7d1a1a]" size={20} />
-                  )}
+                  {isLoadingMore && <Loader2 className="animate-spin text-[#7d1a1a]" size={20} />}
                   {visibleCount >= filteredAndSortedMaterials.length && filteredAndSortedMaterials.length > 0 && (
                     <p className="text-xs text-gray-400">All materials loaded</p>
                   )}
@@ -846,12 +625,8 @@ export default function ReviewMaterialsPage() {
             </>
           ) : (
             <div className="flex-1 flex flex-col items-center justify-center text-gray-400 p-6">
-              <div className="bg-gray-50 p-6 rounded-full mb-4">
-                <FileText size={32} />
-              </div>
-              <p className="font-bold text-base text-center">
-                No materials found
-              </p>
+              <div className="bg-gray-50 p-6 rounded-full mb-4"><FileText size={32} /></div>
+              <p className="font-bold text-base text-center">No materials found</p>
               <p className="text-sm text-gray-400 mt-2 text-center max-w-md">
                 {activeFilterCount > 0 || searchQuery
                   ? "Try adjusting your filters or search query"
@@ -860,10 +635,7 @@ export default function ReviewMaterialsPage() {
                   : "No materials available yet for this course"}
               </p>
               {(activeFilterCount > 0 || searchQuery) && (
-                <button
-                  onClick={clearAllFilters}
-                  className="mt-4 px-4 py-2 bg-gray-100 text-gray-600 rounded-lg font-medium text-sm hover:bg-gray-200 transition-all"
-                >
+                <button onClick={clearAllFilters} className="mt-4 px-4 py-2 bg-gray-100 text-gray-600 rounded-lg font-medium text-sm hover:bg-gray-200 transition-all">
                   Clear all filters
                 </button>
               )}
@@ -872,22 +644,69 @@ export default function ReviewMaterialsPage() {
         </div>
       </div>
 
+      {/* ─── PDF VIEWER MODAL ─── */}
+      {viewingMaterial && (
+        <>
+          <div className="fixed inset-0 bg-black/70 z-50 backdrop-blur-sm" onClick={() => setViewingMaterial(null)} />
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl h-[90vh] flex flex-col overflow-hidden">
+              
+              {/* Modal header */}
+              <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 flex-shrink-0">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="p-2 bg-[#7d1a1a]/10 rounded-lg flex-shrink-0">
+                    <FileText size={18} className="text-[#7d1a1a]" />
+                  </div>
+                  <div className="min-w-0">
+                    <h2 className="font-black text-gray-900 text-sm sm:text-base truncate">{viewingMaterial.title}</h2>
+                    <p className="text-xs text-gray-500 truncate">{viewingMaterial.subject}</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setViewingMaterial(null)}
+                  className="p-2 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-all flex-shrink-0 ml-3"
+                  title="Close"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              {/* PDF iframe */}
+              <div className="flex-1 bg-gray-100 overflow-hidden">
+                <iframe
+                  src={getPdfViewerUrl(viewingMaterial.fileUrl!)}
+                  className="w-full h-full border-0"
+                  title={viewingMaterial.title}
+                  // Disable right-click context menu inside iframe (best-effort)
+                  onContextMenu={(e) => e.preventDefault()}
+                />
+              </div>
+
+              {/* Modal footer */}
+              <div className="flex items-center justify-between px-5 py-3 border-t border-gray-100 bg-gray-50 flex-shrink-0">
+                <p className="text-xs text-gray-400 italic">Viewing only — downloading is not available.</p>
+                <button
+                  onClick={() => setViewingMaterial(null)}
+                  className="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold rounded-lg text-sm transition-all"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
       {/* UPLOAD MODAL */}
       {showUploadModal && (
         <>
-          <div 
-            className="fixed inset-0 bg-black/50 z-50 backdrop-blur-sm"
-            onClick={() => setShowUploadModal(false)}
-          />
+          <div className="fixed inset-0 bg-black/50 z-50 backdrop-blur-sm" onClick={() => setShowUploadModal(false)} />
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
               <div className="p-4 sm:p-6">
                 <div className="flex items-center justify-between mb-6">
                   <h2 className="text-xl sm:text-2xl font-black text-gray-900">Upload Material</h2>
-                  <button
-                    onClick={() => setShowUploadModal(false)}
-                    className="p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100 transition-all"
-                  >
+                  <button onClick={() => setShowUploadModal(false)} className="p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100 transition-all">
                     <X size={20} />
                   </button>
                 </div>
@@ -906,24 +725,18 @@ export default function ReviewMaterialsPage() {
                       <button
                         onClick={() => setUploadType("document")}
                         className={`flex items-center justify-center gap-2 p-3 sm:p-4 rounded-xl border-2 transition-all ${
-                          uploadType === "document"
-                            ? "border-[#7d1a1a] bg-[#7d1a1a]/5 text-[#7d1a1a]"
-                            : "border-gray-200 text-gray-600 hover:border-gray-300"
+                          uploadType === "document" ? "border-[#7d1a1a] bg-[#7d1a1a]/5 text-[#7d1a1a]" : "border-gray-200 text-gray-600 hover:border-gray-300"
                         }`}
                       >
-                        <Upload size={18} />
-                        <span className="font-bold text-sm">PDF Document</span>
+                        <Upload size={18} /><span className="font-bold text-sm">PDF Document</span>
                       </button>
                       <button
                         onClick={() => setUploadType("video")}
                         className={`flex items-center justify-center gap-2 p-3 sm:p-4 rounded-xl border-2 transition-all ${
-                          uploadType === "video"
-                            ? "border-[#7d1a1a] bg-[#7d1a1a]/5 text-[#7d1a1a]"
-                            : "border-gray-200 text-gray-600 hover:border-gray-300"
+                          uploadType === "video" ? "border-[#7d1a1a] bg-[#7d1a1a]/5 text-[#7d1a1a]" : "border-gray-200 text-gray-600 hover:border-gray-300"
                         }`}
                       >
-                        <Link2 size={18} />
-                        <span className="font-bold text-sm">Video Link</span>
+                        <Link2 size={18} /><span className="font-bold text-sm">Video Link</span>
                       </button>
                     </div>
                   </div>
@@ -937,9 +750,7 @@ export default function ReviewMaterialsPage() {
                         className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#7d1a1a]/20 focus:border-[#7d1a1a] text-sm"
                       >
                         <option value="">Select Area</option>
-                        {areas.map((area) => (
-                          <option key={area._id} value={area.name}>{area.name}</option>
-                        ))}
+                        {areas.map((area) => <option key={area._id} value={area.name}>{area.name}</option>)}
                       </select>
                     </div>
                   )}
@@ -954,15 +765,8 @@ export default function ReviewMaterialsPage() {
                     >
                       <option value="">Select Subject</option>
                       {subjects
-                        .filter(s => {
-                          // For BSGE: show all subjects
-                          if (selectedCourse === "BSGE") return true;
-                          // For BSABEN: filter by selected area
-                          return !uploadForm.area || s.area === uploadForm.area;
-                        })
-                        .map((subject) => (
-                          <option key={subject._id} value={subject.name}>{subject.name}</option>
-                        ))}
+                        .filter(s => selectedCourse === "BSGE" ? true : !uploadForm.area || s.area === uploadForm.area)
+                        .map((subject) => <option key={subject._id} value={subject.name}>{subject.name}</option>)}
                     </select>
                     {selectedCourse === "BSABEN" && !uploadForm.area && (
                       <p className="text-xs text-gray-500 mt-1">Please select an area first</p>
@@ -972,8 +776,7 @@ export default function ReviewMaterialsPage() {
                   <div>
                     <label className="block text-sm font-bold text-gray-900 mb-2">Title</label>
                     <input
-                      type="text"
-                      value={uploadForm.title}
+                      type="text" value={uploadForm.title}
                       onChange={(e) => setUploadForm({ ...uploadForm, title: e.target.value })}
                       className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#7d1a1a]/20 focus:border-[#7d1a1a] text-sm"
                       placeholder="Enter material title"
@@ -986,8 +789,7 @@ export default function ReviewMaterialsPage() {
                       value={uploadForm.description}
                       onChange={(e) => setUploadForm({ ...uploadForm, description: e.target.value })}
                       className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#7d1a1a]/20 focus:border-[#7d1a1a] resize-none text-sm"
-                      rows={3}
-                      placeholder="Brief description of the material"
+                      rows={3} placeholder="Brief description of the material"
                     />
                   </div>
 
@@ -995,8 +797,7 @@ export default function ReviewMaterialsPage() {
                     <div>
                       <label className="block text-sm font-bold text-gray-900 mb-2">PDF File</label>
                       <input
-                        type="file"
-                        accept=".pdf"
+                        type="file" accept=".pdf"
                         onChange={(e) => setUploadForm({ ...uploadForm, file: e.target.files?.[0] || null })}
                         className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#7d1a1a]/20 focus:border-[#7d1a1a] text-sm"
                       />
@@ -1007,8 +808,7 @@ export default function ReviewMaterialsPage() {
                       <div>
                         <label className="block text-sm font-bold text-gray-900 mb-2">Video URL</label>
                         <input
-                          type="url"
-                          value={uploadForm.videoUrl}
+                          type="url" value={uploadForm.videoUrl}
                           onChange={(e) => setUploadForm({ ...uploadForm, videoUrl: e.target.value })}
                           className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#7d1a1a]/20 focus:border-[#7d1a1a] text-sm"
                           placeholder="https://youtube.com/watch?v=..."
@@ -1017,8 +817,7 @@ export default function ReviewMaterialsPage() {
                       <div>
                         <label className="block text-sm font-bold text-gray-900 mb-2">Duration (Optional)</label>
                         <input
-                          type="text"
-                          value={uploadForm.videoDuration}
+                          type="text" value={uploadForm.videoDuration}
                           onChange={(e) => setUploadForm({ ...uploadForm, videoDuration: e.target.value })}
                           className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#7d1a1a]/20 focus:border-[#7d1a1a] text-sm"
                           placeholder="e.g., 45:30"
@@ -1037,9 +836,7 @@ export default function ReviewMaterialsPage() {
                     <button
                       onClick={handleUpload}
                       disabled={
-                        isUploading || 
-                        !uploadForm.title || 
-                        !uploadForm.subject || 
+                        isUploading || !uploadForm.title || !uploadForm.subject ||
                         (selectedCourse === "BSABEN" && !uploadForm.area) ||
                         (uploadType === 'document' && !uploadForm.file) || 
                         (uploadType === 'video' && !uploadForm.videoUrl)
@@ -1047,15 +844,9 @@ export default function ReviewMaterialsPage() {
                       className="flex-1 flex items-center justify-center gap-2 px-6 py-3 bg-[#7d1a1a] text-white font-bold rounded-xl hover:bg-[#5a1313] transition-all disabled:opacity-50 disabled:cursor-not-allowed text-sm"
                     >
                       {isUploading ? (
-                        <>
-                          <Loader2 className="animate-spin" size={16} />
-                          <span>Uploading...</span>
-                        </>
+                        <><Loader2 className="animate-spin" size={16} /><span>Uploading...</span></>
                       ) : (
-                        <>
-                          <Upload size={16} />
-                          <span>Upload Material</span>
-                        </>
+                        <><Upload size={16} /><span>Upload Material</span></>
                       )}
                     </button>
                   </div>
@@ -1071,38 +862,22 @@ export default function ReviewMaterialsPage() {
 
 // Filter Content Component
 function FilterContent({ 
-  selectedCourse, 
-  setSelectedCourse, 
-  user, 
-  canSwitchCourse,
-  selectedTypes, 
-  toggleFilter, 
-  materials,
-  selectedAreas,
-  areas,
-  loadingAreas,
-  selectedSubjects,
-  subjects,
-  loadingSubjects,
-  clearAllFilters
+  selectedCourse, setSelectedCourse, user, canSwitchCourse,
+  selectedTypes, toggleFilter, materials, selectedAreas, areas, loadingAreas,
+  selectedSubjects, subjects, loadingSubjects, clearAllFilters
 }: any) {
   return (
     <>
-      {/* COURSE SELECTOR - Only for admins */}
       {canSwitchCourse && (
         <div>
-          <label className="block text-xs font-bold text-gray-700 mb-3 uppercase tracking-wider">
-            Course
-          </label>
+          <label className="block text-xs font-bold text-gray-700 mb-3 uppercase tracking-wider">Course</label>
           <div className="space-y-2">
             {["BSABEN", "BSGE"].map((course) => (
               <button
                 key={course}
                 onClick={() => setSelectedCourse(course as "BSGE" | "BSABEN")}
                 className={`w-full px-4 py-2.5 rounded-xl text-left text-sm font-bold transition-all ${
-                  selectedCourse === course
-                    ? "bg-[#7d1a1a] text-white shadow-md"
-                    : "bg-gray-50 text-gray-600 hover:bg-gray-100"
+                  selectedCourse === course ? "bg-[#7d1a1a] text-white shadow-md" : "bg-gray-50 text-gray-600 hover:bg-gray-100"
                 }`}
               >
                 {course === "BSABEN" ? "Agricultural & Biosystems" : "Geodetic Engineering"}
@@ -1112,7 +887,6 @@ function FilterContent({
         </div>
       )}
 
-      {/* Show locked course info for non-admins */}
       {!canSwitchCourse && (
         <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
           <div className="flex items-start gap-2">
@@ -1128,15 +902,12 @@ function FilterContent({
       )}
 
       <div>
-        <label className="block text-xs font-bold text-gray-700 mb-3 uppercase tracking-wider">
-          Material Type
-        </label>
+        <label className="block text-xs font-bold text-gray-700 mb-3 uppercase tracking-wider">Material Type</label>
         <div className="space-y-2">
           {["document", "video"].map((type) => (
             <label key={type} className="flex items-center gap-3 p-3 rounded-xl hover:bg-gray-50 cursor-pointer transition-all">
               <input
-                type="checkbox"
-                checked={selectedTypes.includes(type)}
+                type="checkbox" checked={selectedTypes.includes(type)}
                 onChange={() => toggleFilter("type", type)}
                 className="w-4 h-4 text-[#7d1a1a] border-gray-300 rounded focus:ring-[#7d1a1a] cursor-pointer"
               />
@@ -1144,20 +915,15 @@ function FilterContent({
                 {type === "document" ? <FileText size={16} className="text-[#7d1a1a]/70" /> : <Video size={16} className="text-[#7d1a1a]/70" />}
                 <span className="text-sm font-medium capitalize">{type}</span>
               </div>
-              <span className="text-xs text-gray-400">
-                {materials.filter((m: Material) => m.type === type).length}
-              </span>
+              <span className="text-xs text-gray-400">{materials.filter((m: Material) => m.type === type).length}</span>
             </label>
           ))}
         </div>
       </div>
 
-      {/* AREAS - Only show for BSABEN */}
       {selectedCourse === "BSABEN" && (
         <div>
-          <label className="block text-xs font-bold text-gray-700 mb-3 uppercase tracking-wider">
-            Area
-          </label>
+          <label className="block text-xs font-bold text-gray-700 mb-3 uppercase tracking-wider">Area</label>
           {loadingAreas ? (
             <div className="text-center py-4">
               <Loader2 size={20} className="text-[#7d1a1a] mx-auto animate-spin" />
@@ -1168,8 +934,7 @@ function FilterContent({
               {areas.map((area: Area) => (
                 <label key={area._id} className="flex items-center gap-3 p-3 rounded-xl hover:bg-gray-50 cursor-pointer transition-all">
                   <input
-                    type="checkbox"
-                    checked={selectedAreas.includes(area.name)}
+                    type="checkbox" checked={selectedAreas.includes(area.name)}
                     onChange={() => toggleFilter("area", area.name)}
                     className="w-4 h-4 text-[#7d1a1a] border-gray-300 rounded focus:ring-[#7d1a1a] cursor-pointer"
                   />
@@ -1192,11 +957,8 @@ function FilterContent({
         </div>
       )}
 
-      {/* SUBJECTS - Always show, filtered by area for BSABEN */}
       <div>
-        <label className="block text-xs font-bold text-gray-700 mb-3 uppercase tracking-wider">
-          Subject
-        </label>
+        <label className="block text-xs font-bold text-gray-700 mb-3 uppercase tracking-wider">Subject</label>
         {loadingSubjects ? (
           <div className="text-center py-4">
             <Loader2 size={20} className="text-[#7d1a1a] mx-auto animate-spin" />
@@ -1206,18 +968,14 @@ function FilterContent({
           <div className="space-y-2 max-h-64 overflow-y-auto">
             {subjects
               .filter((subject: Subject) => {
-                // For BSGE: show all subjects (no area filtering)
                 if (selectedCourse === "BSGE") return true;
-                
-                // For BSABEN: filter by selected areas
                 if (selectedAreas.length === 0) return true;
                 return !subject.area || selectedAreas.includes(subject.area);
               })
               .map((subject: Subject) => (
                 <label key={subject._id} className="flex items-center gap-3 p-3 rounded-xl hover:bg-gray-50 cursor-pointer transition-all">
                   <input
-                    type="checkbox"
-                    checked={selectedSubjects.includes(subject.name)}
+                    type="checkbox" checked={selectedSubjects.includes(subject.name)}
                     onChange={() => toggleFilter("subject", subject.name)}
                     className="w-4 h-4 text-[#7d1a1a] border-gray-300 rounded focus:ring-[#7d1a1a] cursor-pointer"
                   />
@@ -1232,13 +990,8 @@ function FilterContent({
                   </div>
                   <span className="text-xs text-gray-400 flex-shrink-0">
                     {materials.filter((m: Material) => {
-                      // For BSGE: only match subject name
-                      if (selectedCourse === "BSGE") {
-                        return m.subject === subject.name;
-                      }
-                      // For BSABEN: match both subject name and area
-                      return m.subject === subject.name && 
-                        (!subject.area || m.area === subject.area);
+                      if (selectedCourse === "BSGE") return m.subject === subject.name;
+                      return m.subject === subject.name && (!subject.area || m.area === subject.area);
                     }).length}
                   </span>
                 </label>

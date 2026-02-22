@@ -1,6 +1,6 @@
 import { ObjectId } from "mongodb";
 
-export type ArchiveType = "exam" | "material" | "questions" | "subject" | "student" | "faculty";
+export type ArchiveType = "exam" | "material" | "questions" | "subject" | "student" | "faculty" | "area" | "coordinator";
 export type CourseType = "BSGE" | "BSABEN";
 
 export interface Archive {

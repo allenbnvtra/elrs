@@ -10,7 +10,6 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
-    console.log(id)
     const { searchParams } = new URL(request.url);
     const userId = searchParams.get("userId");
 

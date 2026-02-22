@@ -53,8 +53,6 @@ export default function ExamHistoryPage() {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
 
-  console.log(exams)
-
   useEffect(() => {
     if (!user) return;
     fetchHistory();

@@ -11,8 +11,6 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { fullName, studentNumber, email, password, userType, course } = body;
 
-    console.log("📝 Signup request received:", { fullName, email, userType, course });
-
     // Validation
     if (!fullName || !email || !password || !userType) {
       return NextResponse.json(
@@ -71,46 +69,34 @@ export async function POST(request: NextRequest) {
     }
 
     // Connect to database
-    console.log("🔌 Attempting to connect to MongoDB...");
     const client = await clientPromise;
-    console.log("✅ MongoDB client connected");
     
     const db = client.db(dbName);
-    console.log(`✅ Database selected: ${dbName}`);
     
     const usersCollection = db.collection<User>("users");
-    console.log("✅ Users collection accessed");
 
     // Check if email already exists
-    console.log("🔍 Checking for existing email...");
     const existingEmail = await usersCollection.findOne({ email: email.toLowerCase() });
     if (existingEmail) {
-      console.log("⚠️ Email already exists");
       return NextResponse.json(
         { error: "Email already registered" },
         { status: 409 }
       );
     }
-    console.log("✅ Email is unique");
 
     // Check if student number already exists (only for students)
     if (userType === "student") {
-      console.log("🔍 Checking for existing student number...");
       const existingStudent = await usersCollection.findOne({ studentNumber: studentNumber });
       if (existingStudent) {
-        console.log("⚠️ Student number already exists");
         return NextResponse.json(
           { error: "Student number already registered" },
           { status: 409 }
         );
       }
-      console.log("✅ Student number is unique");
     }
 
     // Hash password
-    console.log("🔐 Hashing password...");
     const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
-    console.log("✅ Password hashed");
 
     // Create user object based on type
     const now = new Date();
@@ -156,17 +142,13 @@ export async function POST(request: NextRequest) {
     }
 
     // Insert user into database
-    console.log("💾 Inserting user into database...");
     const result = await usersCollection.insertOne(newUser as any);
-    console.log("✅ User inserted with ID:", result.insertedId);
 
     // Fetch the created user (without password)
-    console.log("🔍 Fetching created user...");
     const createdUser = await usersCollection.findOne(
       { _id: result.insertedId },
       { projection: { passwordHash: 0 } }
     );
-    console.log("✅ User fetched successfully");
 
     // Different success messages based on user type
     let message = "Account created successfully";

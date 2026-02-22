@@ -29,8 +29,6 @@ async function extractTextFromPDF(buffer: Buffer): Promise<string> {
   try {
     const PDFParser = require('pdf2json');
     
-    console.log('📄 PDF buffer size:', buffer.length, 'bytes');
-    
     return new Promise((resolve, reject) => {
       const pdfParser = new PDFParser();
       
@@ -41,10 +39,6 @@ async function extractTextFromPDF(buffer: Buffer): Promise<string> {
       
       pdfParser.on('pdfParser_dataReady', (pdfData: any) => {
         try {
-          console.log('📊 PDF Info:', {
-            pages: pdfData.Pages?.length || 0,
-          });
-          
           // Extract text from all pages
           let fullText = '';
           

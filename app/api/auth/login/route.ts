@@ -8,8 +8,6 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { email, password } = body;
 
-    console.log("🔐 Login attempt for:", email);
-
     // Validation
     if (!email || !password) {
       return NextResponse.json(
@@ -29,7 +27,6 @@ export async function POST(request: NextRequest) {
     });
 
     if (!user) {
-      console.log("❌ User not found");
       return NextResponse.json(
         { error: "Invalid email or password" },
         { status: 401 }
@@ -40,7 +37,6 @@ export async function POST(request: NextRequest) {
     const isValidPassword = await verifyPassword(password, user.passwordHash);
     
     if (!isValidPassword) {
-      console.log("❌ Invalid password");
       return NextResponse.json(
         { error: "Invalid email or password" },
         { status: 401 }
@@ -52,7 +48,6 @@ export async function POST(request: NextRequest) {
       const userWithStatus = user as Student | Faculty;
       
       if (userWithStatus.status === "pending") {
-        console.log("⏳ Account pending approval for:", email);
         return NextResponse.json(
           { 
             error: user.role === "student" 
@@ -65,7 +60,6 @@ export async function POST(request: NextRequest) {
       }
 
       if (userWithStatus.status === "rejected") {
-        console.log("❌ Account rejected for:", email);
         return NextResponse.json(
           { 
             error: "Your account has been rejected. Please contact support for more information.",
@@ -83,8 +77,6 @@ export async function POST(request: NextRequest) {
       role: user.role,
       name: user.name,
     });
-
-    console.log("✅ Login successful for:", email, "Role:", user.role);
 
     // Create response with user data (excluding password)
     const userData: any = {

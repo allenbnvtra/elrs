@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import clientPromise, { dbName } from "@/lib/mongodb";
 import { User, Faculty, sanitizeUser } from "@/models/User";
+import { Archive } from "@/models/Archive";
 
 // ─── GET /api/coordinators ──────────────────────────────────────────────────
 // Get list of coordinators (approved faculty members)
@@ -49,15 +50,11 @@ export async function GET(request: NextRequest) {
       status: status,
     };
 
-    // Filter by course if provided
-    if (course) {
-      filter.course = course;
-    }
+    if (course) filter.course = course;
 
-    // Search filter
     if (search) {
       filter.$or = [
-        { name: { $regex: search, $options: "i" } },
+        { name:  { $regex: search, $options: "i" } },
         { email: { $regex: search, $options: "i" } },
       ];
     }
@@ -70,25 +67,18 @@ export async function GET(request: NextRequest) {
     // Enrich with contribution counts
     const enrichedCoordinators = await Promise.all(
       coordinators.map(async (coord) => {
-        // Count questions created by this coordinator
         const contributions = await questionsCol.countDocuments({
           createdBy: coord._id,
         });
-
-        return {
-          ...sanitizeUser(coord),
-          contributions,
-        };
+        return { ...sanitizeUser(coord), contributions };
       })
     );
 
-    // Calculate total contributions
     const totalContributions = enrichedCoordinators.reduce(
       (sum, coord) => sum + coord.contributions,
       0
     );
 
-    // Calculate online/active count (based on lastActive within 5 minutes)
     const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
     const activeCount = coordinators.filter(
       (c) => c.lastActive && new Date(c.lastActive) > fiveMinutesAgo
@@ -106,20 +96,17 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     console.error("GET /api/coordinators error:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
 
-// ─── DELETE /api/coordinators ──────────────────────────────────────────────────
+// ─── DELETE /api/coordinators ───────────────────────────────────────────────
 // Revoke coordinator access (soft delete - set status to rejected)
 export async function DELETE(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const coordinatorId = searchParams.get("coordinatorId");
-    const userId = searchParams.get("userId");
+    const userId        = searchParams.get("userId");
 
     if (!coordinatorId || !userId) {
       return NextResponse.json(
@@ -129,23 +116,19 @@ export async function DELETE(request: NextRequest) {
     }
 
     if (!ObjectId.isValid(coordinatorId) || !ObjectId.isValid(userId)) {
-      return NextResponse.json(
-        { error: "Invalid ID format" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Invalid ID format" }, { status: 400 });
     }
 
     const client = await clientPromise;
     const db = client.db(dbName);
-    const usersCol = db.collection<User>("users");
+    const usersCol    = db.collection<User>("users");
+    const archivesCol = db.collection<Archive>("archives");
 
-    // Get the user performing the action
+    // Auth check
     const user = await usersCol.findOne({ _id: new ObjectId(userId) });
     if (!user) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
-
-    // Check authorization - Only admins can revoke coordinator access
     if (user.role !== "admin") {
       return NextResponse.json(
         { error: "Unauthorized. Only administrators can revoke coordinator access." },
@@ -153,46 +136,52 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    // Check if coordinator exists
+    // Existence check
     const coordinator = await usersCol.findOne({
       _id: new ObjectId(coordinatorId),
       role: "faculty",
     });
-
     if (!coordinator) {
-      return NextResponse.json(
-        { error: "Coordinator not found" },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: "Coordinator not found" }, { status: 404 });
     }
 
-    // Revoke access by setting status to rejected
+    // Archive before revoking
+    const now = new Date();
+    const archiveEntry: Archive = {
+      type:               "coordinator",
+      title:              coordinator.name,
+      course:             (coordinator as Faculty).course,
+      originalId:         new ObjectId(coordinatorId),
+      originalCollection: "users",
+      archivedBy:         new ObjectId(userId),
+      archivedByName:     user.name,
+      archivedByRole:     user.role,
+      archivedAt:         now,
+      reason:             "Coordinator access revoked by admin",
+      originalData:       coordinator,
+      canRestore:         true,
+      createdAt:          now,
+      updatedAt:          now,
+    };
+
+    await archivesCol.insertOne(archiveEntry);
+
+    // Soft delete — set status to rejected
     const result = await usersCol.updateOne(
       { _id: new ObjectId(coordinatorId) },
-      {
-        $set: {
-          status: "rejected",
-          updatedAt: new Date(),
-        },
-      }
+      { $set: { status: "rejected", updatedAt: now } }
     );
 
     if (result.matchedCount === 0) {
-      return NextResponse.json(
-        { error: "Failed to revoke access" },
-        { status: 500 }
-      );
+      return NextResponse.json({ error: "Failed to revoke access" }, { status: 500 });
     }
 
     return NextResponse.json({
-      message: "Coordinator access revoked successfully",
+      message: "Coordinator access revoked and archived successfully",
       coordinatorId,
     });
   } catch (error) {
     console.error("DELETE /api/coordinators error:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

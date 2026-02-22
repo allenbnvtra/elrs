@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import clientPromise, { dbName } from "@/lib/mongodb";
 import { Subject, CourseType } from "@/models/Questions";
+import { Archive } from "@/models/Archive";
 import { User } from "@/models/User";
 
 type Params = { params: Promise<{ id: string }> };
@@ -158,19 +159,19 @@ export async function DELETE(request: NextRequest, { params }: Params) {
     const subjectsCol  = db.collection<Subject>("subjects");
     const questionsCol = db.collection("questions");
     const usersCol     = db.collection<User>("users");
+    const archivesCol  = db.collection<Archive>("archives");
 
-    // Check user authorization
-    const user = await usersCol.findOne({ _id: new ObjectId(userId) });
+    const [user, subject] = await Promise.all([
+      usersCol.findOne({ _id: new ObjectId(userId) }),
+      subjectsCol.findOne({ _id: new ObjectId(id) }),
+    ]);
+
     if (!user) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
-
     if (user.role !== "admin" && user.role !== "faculty") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
     }
-
-    // Check if subject exists
-    const subject = await subjectsCol.findOne({ _id: new ObjectId(id) });
     if (!subject) {
       return NextResponse.json({ error: "Subject not found" }, { status: 404 });
     }
@@ -186,7 +187,6 @@ export async function DELETE(request: NextRequest, { params }: Params) {
     }
 
     const questionCount = await questionsCol.countDocuments(questionFilter);
-
     if (questionCount > 0) {
       return NextResponse.json(
         {
@@ -196,13 +196,29 @@ export async function DELETE(request: NextRequest, { params }: Params) {
       );
     }
 
-    const result = await subjectsCol.deleteOne({ _id: new ObjectId(id) });
+    // Archive before deleting
+    const now = new Date();
+    const archiveEntry: Archive = {
+      type:               "subject",
+      title:              subject.name,
+      course:             subject.course,
+      originalId:         new ObjectId(id),
+      originalCollection: "subjects",
+      archivedBy:         new ObjectId(userId),
+      archivedByName:     user.name,
+      archivedByRole:     user.role,
+      archivedAt:         now,
+      reason:             "Deleted by user",
+      originalData:       subject,
+      canRestore:         true,
+      createdAt:          now,
+      updatedAt:          now,
+    };
 
-    if (result.deletedCount === 0) {
-      return NextResponse.json({ error: "Failed to delete subject" }, { status: 500 });
-    }
+    await archivesCol.insertOne(archiveEntry);
+    await subjectsCol.deleteOne({ _id: new ObjectId(id) });
 
-    return NextResponse.json({ message: "Subject deleted successfully" });
+    return NextResponse.json({ message: "Subject archived and deleted successfully" });
   } catch (error) {
     console.error("DELETE /api/subjects/[id] error:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
