@@ -1,0 +1,444 @@
+"use client";
+
+import React, { useState, useEffect, useCallback } from "react";
+import {
+  Award, TrendingUp, TrendingDown, Users, Target,
+  Download, Filter, Search, MoreHorizontal,
+  ChevronLeft, ChevronRight, FileBarChart, CheckCircle,
+  Calendar, BookOpen, X, Loader2, GraduationCap,
+} from "lucide-react";
+import { useAuth } from "@/contexts/authContext";
+
+interface Score {
+  studentId: string;
+  studentNumber: string;
+  name: string;
+  course: "BSABEN" | "BSGE";
+  examsTaken: number;
+  averageScore: number;
+  highestScore: number;
+  lowestScore: number;
+  status: "excellent" | "good" | "needs-improvement";
+  lastExam: string;
+  grade: string;
+}
+
+interface Stats {
+  totalStudents: number;
+  averageScore: number;
+  passRate: number;
+  excellentCount: number;
+}
+
+interface Pagination {
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+}
+
+const STATUS_COLORS = {
+  "excellent":         { bg: "bg-emerald-50", text: "text-emerald-700", dot: "bg-emerald-500" },
+  "good":              { bg: "bg-blue-50",    text: "text-blue-700",    dot: "bg-blue-500"    },
+  "needs-improvement": { bg: "bg-amber-50",   text: "text-amber-700",   dot: "bg-amber-500"   },
+} as const;
+
+const getGradeColor = (grade: string) => {
+  if (grade.startsWith("A")) return "text-emerald-600";
+  if (grade.startsWith("B")) return "text-blue-600";
+  if (grade.startsWith("C")) return "text-amber-600";
+  return "text-gray-600";
+};
+
+const formatDate = (d: string) =>
+  new Date(d).toLocaleDateString("en-US", { year: "numeric", month: "2-digit", day: "2-digit" });
+
+export default function ScoresPage() {
+  const { user } = useAuth();
+  const isAdmin     = user?.role === "admin";
+  const isFaculty   = user?.role === "faculty";
+  const facultyCourse = isFaculty ? (user as any).course as "BSABEN" | "BSGE" : null;
+
+  // Faculty are locked to their course; admin defaults to BSABEN
+  const [selectedCourse, setSelectedCourse] = useState<"BSABEN" | "BSGE">(facultyCourse ?? "BSABEN");
+  const [searchQuery, setSearchQuery]       = useState("");
+  const [filterStatus, setFilterStatus]     = useState("all");
+  const [currentPage, setCurrentPage]       = useState(1);
+
+  const [scores, setScores]         = useState<Score[]>([]);
+  const [stats, setStats]           = useState<Stats | null>(null);
+  const [pagination, setPagination] = useState<Pagination | null>(null);
+
+  const [loading, setLoading]           = useState(false);
+  const [loadingStats, setLoadingStats] = useState(false);
+  const [exporting, setExporting]       = useState(false);
+
+  const fetchStats = useCallback(async () => {
+    if (!user?.id) return;
+    setLoadingStats(true);
+    try {
+      const params = new URLSearchParams({ userId: user.id });
+      // Only send course for admin — backend scopes faculty automatically
+      if (isAdmin) params.set("course", selectedCourse);
+      const res = await fetch(`/api/scores/stats?${params}`);
+      const data = await res.json();
+      if (res.ok) setStats(data);
+    } catch { console.error("Failed to fetch stats"); }
+    finally { setLoadingStats(false); }
+  }, [selectedCourse, user?.id, isAdmin]);
+
+  const fetchScores = useCallback(async () => {
+    if (!user?.id) return;
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({
+        userId: user.id,
+        page:   String(currentPage),
+        limit:  "20",
+      });
+      // Only send course for admin — backend scopes faculty automatically
+      if (isAdmin) params.set("course", selectedCourse);
+      if (filterStatus !== "all") params.set("status", filterStatus);
+      if (searchQuery)            params.set("search", searchQuery);
+
+      const res = await fetch(`/api/scores?${params}`);
+      const data = await res.json();
+      if (res.ok) {
+        setScores(data.scores);
+        setPagination(data.pagination);
+      }
+    } catch { console.error("Failed to fetch scores"); }
+    finally { setLoading(false); }
+  }, [selectedCourse, currentPage, filterStatus, searchQuery, user?.id, isAdmin]);
+
+  useEffect(() => { fetchStats();  }, [fetchStats]);
+  useEffect(() => { fetchScores(); }, [fetchScores]);
+  useEffect(() => { setCurrentPage(1); }, [selectedCourse, filterStatus, searchQuery]);
+
+  const handleExportCSV = async () => {
+    if (!user?.id) return;
+    setExporting(true);
+    try {
+      const params = new URLSearchParams({ userId: user.id });
+      if (isAdmin) params.set("course", selectedCourse);
+      if (filterStatus !== "all") params.set("status", filterStatus);
+      if (searchQuery)            params.set("search", searchQuery);
+
+      const res = await fetch(`/api/scores/export?${params}`);
+      const a = Object.assign(document.createElement("a"), {
+        href:     URL.createObjectURL(await res.blob()),
+        download: `scores-${selectedCourse}-${Date.now()}.csv`,
+      });
+      a.click();
+      URL.revokeObjectURL(a.href);
+    } catch {
+      alert("Failed to export grades");
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const buildPageList = () => {
+    if (!pagination) return [];
+    const t = pagination.totalPages;
+    if (t <= 5) return Array.from({ length: t }, (_, i) => i + 1);
+    if (currentPage <= 3)     return [1, 2, 3, "...", t];
+    if (currentPage >= t - 2) return [1, "...", t - 2, t - 1, t];
+    return [1, "...", currentPage - 1, currentPage, currentPage + 1, "...", t];
+  };
+
+  // ─── Shared sub-components ────────────────────────────────────────────────
+
+  const PaginationControls = ({ mobile = false }: { mobile?: boolean }) => (
+    <div className={`flex items-center ${mobile ? "justify-center gap-1.5 xs:gap-2" : "gap-2"}`}>
+      <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1}
+        className={`${mobile ? "p-1.5 xs:p-2" : "p-2"} text-gray-400 hover:bg-white border border-gray-200 rounded-lg disabled:opacity-30`}>
+        <ChevronLeft size={mobile ? 16 : 18} />
+      </button>
+      {buildPageList().map((p, i) => (
+        <button key={i} onClick={() => typeof p === "number" && setCurrentPage(p)} disabled={typeof p !== "number"}
+          className={`${mobile ? "w-8 h-8 xs:w-9 xs:h-9 text-[10px] xs:text-xs" : "w-9 h-9 text-xs"} rounded-lg font-bold transition-colors ${
+            p === currentPage        ? "bg-[#7d1a1a] text-white"
+            : typeof p === "number" ? "text-gray-600 hover:bg-gray-100"
+            : "text-gray-400 cursor-default"
+          }`}>
+          {p}
+        </button>
+      ))}
+      <button onClick={() => setCurrentPage(p => Math.min(pagination!.totalPages, p + 1))} disabled={currentPage === pagination?.totalPages}
+        className={`${mobile ? "p-1.5 xs:p-2" : "p-2"} text-gray-400 hover:bg-white border border-gray-200 rounded-lg disabled:opacity-30`}>
+        <ChevronRight size={mobile ? 16 : 18} />
+      </button>
+    </div>
+  );
+
+  const EmptyState = () => (
+    <div className="flex flex-col items-center justify-center opacity-30">
+      <FileBarChart size={48} className="text-gray-400" />
+      <p className="mt-4 font-black uppercase tracking-widest text-sm text-gray-500">No Scores Found</p>
+      <p className="text-xs font-bold text-gray-400">Try adjusting your filters</p>
+    </div>
+  );
+
+  // ─── Render ───────────────────────────────────────────────────────────────
+
+  return (
+    <div className="space-y-4 xs:space-y-5 sm:space-y-6 animate-in fade-in duration-700">
+
+      {/* HEADER */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 xs:gap-4">
+        <div>
+          <div className="flex items-center gap-1.5 xs:gap-2 mb-0.5 xs:mb-1">
+            <GraduationCap className="text-[#7d1a1a]" size={16} />
+            <span className="text-[#7d1a1a] font-bold text-[9px] xs:text-[10px] sm:text-xs uppercase tracking-widest">
+              Student Assessment & Grade Tracking
+            </span>
+          </div>
+          <h1 className="text-xl xs:text-2xl sm:text-3xl font-black text-gray-900 tracking-tight">
+            Performance Scores
+          </h1>
+        </div>
+        <button onClick={handleExportCSV} disabled={exporting}
+          className="flex items-center gap-1.5 xs:gap-2 bg-white border border-gray-200 px-4 xs:px-5 sm:px-6 py-2.5 sm:py-3 rounded-lg xs:rounded-xl font-bold text-gray-600 hover:bg-gray-50 transition-all text-xs xs:text-sm active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed">
+          {exporting ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
+          {exporting ? "Exporting..." : "Export Grades"}
+        </button>
+      </div>
+
+      {/* STATS */}
+      {loadingStats ? (
+        <div className="flex justify-center py-8">
+          <Loader2 size={32} className="animate-spin text-[#7d1a1a]" />
+        </div>
+      ) : stats && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 xs:gap-3 sm:gap-4">
+          {[
+            { label: "Total Students", value: stats.totalStudents,                icon: Users,        color: "text-blue-600",    bg: "bg-blue-50"     },
+            { label: "Avg. Score",     value: `${stats.averageScore.toFixed(1)}%`, icon: Target,      color: "text-emerald-600", bg: "bg-emerald-50"  },
+            { label: "Pass Rate",      value: `${stats.passRate.toFixed(0)}%`,    icon: CheckCircle,  color: "text-[#7d1a1a]",   bg: "bg-[#7d1a1a]/5" },
+            { label: "Excellence",     value: stats.excellentCount,               icon: Award,        color: "text-amber-600",   bg: "bg-amber-50"    },
+          ].map(({ label, value, icon: Icon, color, bg }) => (
+            <div key={label} className="bg-white p-3 xs:p-4 rounded-xl xs:rounded-2xl border border-gray-200/60 shadow-sm">
+              <div className="flex items-center gap-2 xs:gap-3">
+                <div className={`w-10 h-10 xs:w-12 xs:h-12 ${bg} rounded-xl xs:rounded-2xl flex items-center justify-center ${color} flex-shrink-0`}>
+                  <Icon size={18} className="xs:w-5 xs:h-5 sm:w-6 sm:h-6" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-[8px] xs:text-[9px] sm:text-[10px] font-black text-gray-400 uppercase tracking-tighter">{label}</p>
+                  <p className="text-lg xs:text-xl sm:text-2xl font-black text-gray-900 truncate">{value}</p>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* FILTERS */}
+      <div className="flex flex-col gap-3 xs:gap-4 bg-white p-3 xs:p-4 rounded-xl xs:rounded-2xl border border-gray-200/60 shadow-sm">
+        {/* Course tabs — admin only; faculty locked to their course */}
+        {isAdmin && (
+          <div className="flex bg-gray-100 p-0.5 xs:p-1 rounded-lg xs:rounded-xl w-full">
+            {(["BSABEN", "BSGE"] as const).map((c) => (
+              <button key={c} onClick={() => setSelectedCourse(c)}
+                className={`flex-1 px-4 xs:px-6 sm:px-8 py-2 xs:py-2.5 rounded-md xs:rounded-lg text-[9px] xs:text-[10px] sm:text-[11px] font-black uppercase tracking-wider transition-all ${
+                  selectedCourse === c ? "bg-white text-[#7d1a1a] shadow-sm" : "text-gray-500 hover:text-gray-700"
+                }`}>
+                {c}
+              </button>
+            ))}
+          </div>
+        )}
+
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 xs:gap-3">
+          <div className="relative flex-1">
+            <Search className="absolute left-2 xs:left-3 top-1/2 -translate-y-1/2 text-gray-400" size={14} />
+            <input
+              type="text"
+              placeholder="Search by name or ID..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-7 xs:pl-10 pr-8 xs:pr-10 py-2 xs:py-2.5 bg-gray-50 border border-gray-200 rounded-lg xs:rounded-xl text-xs xs:text-sm focus:outline-none focus:ring-2 focus:ring-[#7d1a1a]/10 transition-all"
+            />
+            {searchQuery && (
+              <button onClick={() => setSearchQuery("")} className="absolute right-2 xs:right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-1">
+                <X size={14} />
+              </button>
+            )}
+          </div>
+          <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}
+            className="px-3 xs:px-4 py-2 xs:py-2.5 bg-gray-50 border border-gray-200 rounded-lg xs:rounded-xl text-xs xs:text-sm font-bold text-gray-700 cursor-pointer outline-none focus:ring-2 focus:ring-[#7d1a1a]/10 transition-all">
+            <option value="all">All Performance</option>
+            <option value="excellent">Excellent</option>
+            <option value="good">Good</option>
+            <option value="needs-improvement">Needs Improvement</option>
+          </select>
+          <button onClick={fetchScores} disabled={loading}
+            className="p-2 xs:p-2.5 border border-gray-200 rounded-lg xs:rounded-xl text-gray-500 hover:bg-gray-50 transition-all flex-shrink-0 disabled:opacity-50"
+            aria-label="Apply filters">
+            <Filter size={16} />
+          </button>
+        </div>
+      </div>
+
+      {/* DESKTOP TABLE */}
+      <div className="hidden lg:block bg-white rounded-[24px] border border-gray-200 shadow-sm overflow-hidden min-h-[500px]">
+        {loading ? (
+          <div className="flex justify-center py-16">
+            <Loader2 size={32} className="animate-spin text-[#7d1a1a]" />
+          </div>
+        ) : (
+          <table className="w-full text-left border-collapse">
+            <thead className="sticky top-0 z-10 bg-gray-50/90 backdrop-blur-md border-b border-gray-200">
+              <tr className="text-[10px] font-black text-gray-400 uppercase tracking-widest">
+                {["Student", "Exams", "Average", "Range", "Grade", "Status", "Last Exam"].map((h, i) => (
+                  <th key={h} className={`${i === 0 || i === 6 ? "px-8" : "px-6"} py-5 ${i === 6 ? "text-right" : ""}`}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {scores.length > 0 ? scores.map((s, i) => {
+                const sc = STATUS_COLORS[s.status] ?? { bg: "bg-gray-50", text: "text-gray-700", dot: "bg-gray-500" };
+                return (
+                  <tr key={i} className="hover:bg-gray-50/50 transition-colors">
+                    <td className="px-8 py-5">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#7d1a1a] to-[#3d0d0d] flex items-center justify-center text-white font-black text-xs">
+                          {s.name.charAt(0)}
+                        </div>
+                        <div>
+                          <p className="text-sm font-black text-gray-900 leading-none">{s.name}</p>
+                          <p className="text-[11px] text-gray-400 font-bold mt-1">{s.studentNumber}</p>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-6 py-5">
+                      <div className="flex items-center gap-2">
+                        <BookOpen size={14} className="text-gray-400" />
+                        <span className="text-xs font-bold text-gray-700">{s.examsTaken} Taken</span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-5">
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1 max-w-[100px]">
+                          <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                            <div className={`h-full rounded-full ${s.averageScore >= 90 ? "bg-emerald-500" : s.averageScore >= 75 ? "bg-blue-500" : "bg-amber-500"}`}
+                              style={{ width: `${s.averageScore}%` }} />
+                          </div>
+                        </div>
+                        <span className="text-xs font-black text-gray-900 min-w-[45px]">{s.averageScore.toFixed(1)}%</span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-5">
+                      <div className="flex flex-col text-xs">
+                        <span className="text-emerald-600 font-bold flex items-center gap-1"><TrendingUp size={12} /> {s.highestScore}%</span>
+                        <span className="text-red-600 font-bold flex items-center gap-1"><TrendingDown size={12} /> {s.lowestScore}%</span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-5">
+                      <span className={`text-2xl font-black ${getGradeColor(s.grade)}`}>{s.grade}</span>
+                    </td>
+                    <td className="px-6 py-5">
+                      <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black uppercase ${sc.bg} ${sc.text}`}>
+                        <div className={`w-1.5 h-1.5 rounded-full ${sc.dot}`} />
+                        {s.status.replace("-", " ")}
+                      </span>
+                    </td>
+                    <td className="px-8 py-5 text-right text-xs text-gray-500 font-bold">
+                      {s.lastExam ? formatDate(s.lastExam) : "—"}
+                    </td>
+                  </tr>
+                );
+              }) : (
+                <tr>
+                  <td colSpan={7} className="py-24 text-center">
+                    <EmptyState />
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        )}
+
+        {pagination && pagination.totalPages > 1 && (
+          <div className="p-5 border-t border-gray-100 bg-gray-50/30 flex items-center justify-between">
+            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">
+              Showing {(pagination.page - 1) * pagination.limit + 1}–{Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total} Students
+            </p>
+            <PaginationControls />
+          </div>
+        )}
+      </div>
+
+      {/* MOBILE CARDS */}
+      <div className="lg:hidden space-y-3 xs:space-y-4">
+        {loading ? (
+          <div className="flex justify-center py-12">
+            <Loader2 size={28} className="animate-spin text-[#7d1a1a]" />
+          </div>
+        ) : scores.length > 0 ? scores.map((s, i) => {
+          const sc = STATUS_COLORS[s.status] ?? { bg: "bg-gray-50", text: "text-gray-700", dot: "bg-gray-500" };
+          return (
+            <div key={i} className="bg-white rounded-xl xs:rounded-2xl border border-gray-200 shadow-sm p-3 xs:p-4 hover:shadow-md transition-all">
+              <div className="flex items-start gap-2 xs:gap-3 mb-3 xs:mb-4">
+                <div className="w-12 h-12 xs:w-14 xs:h-14 rounded-full bg-gradient-to-br from-[#7d1a1a] to-[#3d0d0d] flex items-center justify-center text-white font-black text-sm xs:text-base shadow-lg flex-shrink-0">
+                  {s.name.charAt(0)}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h3 className="text-sm xs:text-base font-black text-gray-900 leading-none mb-1 truncate">{s.name}</h3>
+                  <p className="text-[10px] xs:text-[11px] text-gray-400 font-bold mb-1.5">{s.studentNumber}</p>
+                  <div className="flex items-center gap-1.5 xs:gap-2 flex-wrap">
+                    <span className={`text-xl xs:text-2xl font-black ${getGradeColor(s.grade)}`}>{s.grade}</span>
+                    <span className={`inline-flex items-center gap-1 px-1.5 xs:px-2 py-0.5 xs:py-1 rounded-full text-[8px] xs:text-[9px] font-black uppercase ${sc.bg} ${sc.text}`}>
+                      <div className={`w-1 h-1 xs:w-1.5 xs:h-1.5 rounded-full ${sc.dot}`} />
+                      {s.status.replace("-", " ")}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mb-3 xs:mb-4">
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-[10px] xs:text-xs text-gray-500 font-medium">Average Score</span>
+                  <span className="text-sm xs:text-base font-black text-gray-900">{s.averageScore.toFixed(1)}%</span>
+                </div>
+                <div className="h-2 xs:h-2.5 bg-gray-100 rounded-full overflow-hidden">
+                  <div className={`h-full rounded-full ${s.averageScore >= 90 ? "bg-emerald-500" : s.averageScore >= 75 ? "bg-blue-500" : "bg-amber-500"}`}
+                    style={{ width: `${s.averageScore}%` }} />
+                </div>
+              </div>
+
+              <div className="space-y-2 xs:space-y-2.5 pb-3 xs:pb-4 border-b border-gray-100">
+                {[
+                  { label: "Exams Taken",   value: `${s.examsTaken}`,                             icon: BookOpen,     cls: "text-gray-700"    },
+                  { label: "Highest Score", value: `${s.highestScore}%`,                          icon: TrendingUp,   cls: "text-emerald-600" },
+                  { label: "Lowest Score",  value: `${s.lowestScore}%`,                           icon: TrendingDown, cls: "text-red-600"     },
+                  { label: "Last Exam",     value: s.lastExam ? formatDate(s.lastExam) : "—",     icon: Calendar,     cls: "text-gray-700"    },
+                ].map(({ label, value, icon: Icon, cls }) => (
+                  <div key={label} className="flex items-center justify-between">
+                    <span className="text-[10px] xs:text-xs text-gray-500 font-medium">{label}:</span>
+                    <span className={`text-[10px] xs:text-xs font-bold ${cls} flex items-center gap-1`}>
+                      <Icon size={12} className="xs:w-3.5 xs:h-3.5" /> {value}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        }) : (
+          <div className="bg-white rounded-xl xs:rounded-2xl border-2 border-dashed border-gray-100 p-8 xs:p-12 flex flex-col items-center justify-center text-center">
+            <EmptyState />
+          </div>
+        )}
+
+        {pagination && pagination.totalPages > 1 && (
+          <div className="bg-white rounded-xl xs:rounded-2xl border border-gray-200 shadow-sm p-3 xs:p-4">
+            <p className="text-[9px] xs:text-[10px] font-black text-gray-400 uppercase tracking-widest text-center mb-3">
+              Showing {(pagination.page - 1) * pagination.limit + 1}–{Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total} Students
+            </p>
+            <PaginationControls mobile />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

@@ -1,44 +1,44 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import clientPromise, { dbName } from "@/lib/mongodb";
+import { User, Faculty } from "@/models/User";
 
 // ─── GET /api/scores/stats ─────────────────────────────────────────────────────
-// Per-course student performance stats (totalStudents, averageScore, passRate, excellentCount)
-// Used by the dashboard's fetchCourseStats
+// Admin → receives course param; Faculty → scoped to their own course automatically
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const course = searchParams.get("course");
-    const userId = searchParams.get("userId");
+    const userId      = searchParams.get("userId");
+    const courseParam = searchParams.get("course");
 
-    if (!course) {
-      return NextResponse.json({ error: "Missing course parameter" }, { status: 400 });
+    if (!userId) {
+      return NextResponse.json({ error: "Missing userId parameter" }, { status: 400 });
+    }
+    if (!ObjectId.isValid(userId)) {
+      return NextResponse.json({ error: "Invalid userId" }, { status: 400 });
     }
 
-    // Faculty auth check — scope to their own course
-    if (userId) {
-      if (!ObjectId.isValid(userId)) {
-        return NextResponse.json({ error: "Invalid userId" }, { status: 400 });
-      }
-      const client = await clientPromise;
-      const db     = client.db(dbName);
-      const user   = await db.collection("users").findOne({ _id: new ObjectId(userId) });
-      if (!user) {
-        return NextResponse.json({ error: "User not found" }, { status: 404 });
-      }
-      if (user.role === "faculty" && (user as any).course !== course) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
-      }
+    const client   = await clientPromise;
+    const db       = client.db(dbName);
+    const usersCol = db.collection<User>("users");
+
+    const user = await usersCol.findOne({ _id: new ObjectId(userId) });
+    if (!user) {
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
+    }
+    if (user.role !== "admin" && user.role !== "faculty") {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
     }
 
-    const client = await clientPromise;
-    const db     = client.db(dbName);
+    // Faculty always scoped to their own course — ignore any course param from client
+    const course = user.role === "faculty"
+      ? (user as Faculty).course
+      : courseParam ?? "BSABEN";
 
-    // Aggregate per-student average from examResults, then summarise
     const [stats] = await db.collection("examResults")
       .aggregate([
-        // Only count finished exams for this course
-        { $match: {
+        {
+          $match: {
             course,
             $or: [
               { status: { $in: ["completed", "flagged"] } },
@@ -46,11 +46,11 @@ export async function GET(request: NextRequest) {
             ],
           },
         },
-        // Per-student average percentage
+        // Per-student average
         {
           $group: {
-            _id:       "$userId",
-            avgScore:  { $avg: "$percentage" },
+            _id:      "$userId",
+            avgScore: { $avg: "$percentage" },
           },
         },
         // Overall summary
@@ -65,9 +65,9 @@ export async function GET(request: NextRequest) {
         },
         {
           $project: {
-            _id:           0,
-            totalStudents: 1,
-            averageScore:  { $round: ["$overallAverage", 1] },
+            _id:            0,
+            totalStudents:  1,
+            averageScore:   { $round: ["$overallAverage", 1] },
             passRate: {
               $round: [
                 { $multiply: [{ $divide: ["$passingStudents", "$totalStudents"] }, 100] },

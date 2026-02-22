@@ -1,31 +1,43 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import clientPromise, { dbName } from "@/lib/mongodb";
+import { User, Faculty } from "@/models/User";
 
 // ─── GET /api/scores/export ────────────────────────────────────────────────────
+// Admin → receives course param; Faculty → scoped to their own course automatically
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const status  = searchParams.get("status");
-    const search  = searchParams.get("search") ?? "";
-    const userId  = searchParams.get("userId");
+    const userId      = searchParams.get("userId");
+    const courseParam = searchParams.get("course");
+    const status      = searchParams.get("status");
+    const search      = searchParams.get("search") ?? "";
 
-    const client = await clientPromise;
-    const db     = client.db(dbName);
-
-    // ── Auth / course scoping ──────────────────────────────────────────────────
-    let allowedCourse: string | null = null;
-    const courseParam = searchParams.get("course") ?? "BSABEN";
-
-    if (userId && ObjectId.isValid(userId)) {
-      const user = await db.collection("users").findOne({ _id: new ObjectId(userId) });
-      if (user?.role === "faculty") allowedCourse = (user as any).course;
+    if (!userId) {
+      return NextResponse.json({ error: "Missing userId parameter" }, { status: 400 });
+    }
+    if (!ObjectId.isValid(userId)) {
+      return NextResponse.json({ error: "Invalid userId" }, { status: 400 });
     }
 
-    const course = allowedCourse ?? courseParam;
+    const client   = await clientPromise;
+    const db       = client.db(dbName);
+    const usersCol = db.collection<User>("users");
 
-    // ── Same pipeline as /api/scores (no skip/limit) ───────────────────────────
-    const pipeline: any[] = [
+    const user = await usersCol.findOne({ _id: new ObjectId(userId) });
+    if (!user) {
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
+    }
+    if (user.role !== "admin" && user.role !== "faculty") {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
+    }
+
+    // Faculty always scoped to their own course — ignore any course param from client
+    const course = user.role === "faculty"
+      ? (user as Faculty).course
+      : courseParam ?? "BSABEN";
+
+    const pipeline: object[] = [
       {
         $match: {
           course,
@@ -74,8 +86,8 @@ export async function GET(request: NextRequest) {
           status: {
             $switch: {
               branches: [
-                { case: { $gte: ["$averageScore", 90] }, then: "excellent" },
-                { case: { $gte: ["$averageScore", 75] }, then: "good" },
+                { case: { $gte: ["$averageScore", 90] }, then: "excellent"         },
+                { case: { $gte: ["$averageScore", 75] }, then: "good"              },
               ],
               default: "needs-improvement",
             },
@@ -107,14 +119,14 @@ export async function GET(request: NextRequest) {
           _id:           0,
           studentNumber: 1,
           name:          { $ifNull: ["$userName", "Unknown Student"] },
-          course:       { $literal: course },
-          examsTaken:   1,
-          averageScore: { $round: ["$averageScore", 1] },
-          highestScore: 1,
-          lowestScore:  1,
-          status:       1,
-          grade:        1,
-          lastExam:     1,
+          course:        { $literal: course },
+          examsTaken:    1,
+          averageScore:  { $round: ["$averageScore", 1] },
+          highestScore:  1,
+          lowestScore:   1,
+          status:        1,
+          grade:         1,
+          lastExam:      1,
         },
       },
       { $sort: { averageScore: -1 } },
@@ -128,16 +140,16 @@ export async function GET(request: NextRequest) {
       "Grade", "Status", "Last Exam",
     ];
 
-    const escape = (v: any) => {
+    const escape = (v: unknown) => {
       const s = v == null ? "" : String(v);
       return s.includes(",") || s.includes('"') || s.includes("\n")
         ? `"${s.replace(/"/g, '""')}"`
         : s;
     };
 
-    const csvLines = [
+    const csv = [
       headers.join(","),
-      ...rows.map(r =>
+      ...rows.map((r) =>
         [
           r.studentNumber,
           r.name,
@@ -153,9 +165,9 @@ export async function GET(request: NextRequest) {
           .map(escape)
           .join(",")
       ),
-    ];
+    ].join("\n");
 
-    return new NextResponse(csvLines.join("\n"), {
+    return new NextResponse(csv, {
       headers: {
         "Content-Type":        "text/csv",
         "Content-Disposition": `attachment; filename="scores-${course}-${Date.now()}.csv"`,

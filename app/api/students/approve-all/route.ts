@@ -1,15 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import clientPromise, { dbName } from "@/lib/mongodb";
-import { User, Faculty, CourseType } from "@/models/User";
+import { User, Faculty } from "@/models/User";
 
 // ─── POST /api/students/approve-all ────────────────────────────────────────────
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    const { userId, course, action } = body;
+    const { userId, action } = await request.json();
 
-    // Validation
     if (!userId) {
       return NextResponse.json(
         { error: "Missing required field: userId" },
@@ -32,13 +30,11 @@ export async function POST(request: NextRequest) {
     const db = client.db(dbName);
     const usersCol = db.collection<User>("users");
 
-    // Get the user performing the action
     const user = await usersCol.findOne({ _id: new ObjectId(userId) });
     if (!user) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
-    // Check authorization
     if (user.role !== "admin" && user.role !== "faculty") {
       return NextResponse.json(
         { error: "Unauthorized. Only admin and faculty can approve students." },
@@ -46,41 +42,24 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Build filter for students to approve
-    const filter: any = {
-      role: "student",
-      status: "pending",
-    };
+    // Build filter — faculty is scoped to their course; admin sees all courses
+    const filter: Record<string, unknown> = { role: "student", status: "pending" };
 
-    // Faculty can only approve students from their course
-    let targetCourse: CourseType | null = null;
     if (user.role === "faculty") {
-      const faculty = user as Faculty;
-      targetCourse = faculty.course;
-      filter.course = faculty.course;
-    } else if (course) {
-      // Admin can specify a course or approve all
-      targetCourse = course as CourseType;
-      filter.course = course;
+      filter.course = (user as Faculty).course;
     }
+    // admin: no course filter → targets all pending students across all courses
 
-    // Count pending students before approval
     const pendingCount = await usersCol.countDocuments(filter);
-
     if (pendingCount === 0) {
       return NextResponse.json(
-        {
-          message: "No pending students to process",
-          approved: 0,
-          course: targetCourse,
-        },
+        { message: "No pending students to process", processed: 0 },
         { status: 200 }
       );
     }
 
-    // Update all pending students
     const now = new Date();
-    const updateData: any = {
+    const updateData: Record<string, unknown> = {
       status: action === "approve" ? "approved" : "rejected",
       updatedAt: now,
     };
@@ -91,22 +70,16 @@ export async function POST(request: NextRequest) {
       updateData.approvedAt = now;
     }
 
-    const result = await usersCol.updateMany(filter, {
-      $set: updateData,
-    });
+    const result = await usersCol.updateMany(filter, { $set: updateData });
 
     return NextResponse.json({
       message: `Successfully ${action === "approve" ? "approved" : "rejected"} ${result.modifiedCount} student(s)`,
       processed: result.modifiedCount,
-      course: targetCourse,
-      action: action,
+      action,
       processedBy: user.name,
     });
   } catch (error) {
     console.error("POST /api/students/approve-all error:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
