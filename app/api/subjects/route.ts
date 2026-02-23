@@ -9,42 +9,39 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const course = searchParams.get("course") as CourseType | null;
-    const area = searchParams.get("area"); // NEW: Filter by area for BSABEN
+    const area   = searchParams.get("area");
     const search = searchParams.get("search");
 
     const client = await clientPromise;
     const db = client.db(dbName);
-    const subjectsCol = db.collection<Subject>("subjects");
+    const subjectsCol  = db.collection<Subject>("subjects");
     const questionsCol = db.collection("questions");
 
-    // Build filter
+    const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
     const filter: Record<string, unknown> = {};
     if (course) filter.course = course;
-    if (area) filter.area = area; // NEW: Filter subjects by area (for BSABEN)
+    if (area)   filter.area   = area;
     if (search) {
       filter.$or = [
-        { name: { $regex: search, $options: "i" } },
+        { name:        { $regex: search, $options: "i" } },
         { description: { $regex: search, $options: "i" } },
       ];
     }
 
-    const subjects = await subjectsCol
-      .find(filter)
-      .sort({ createdAt: -1 })
-      .toArray();
+    const subjects = await subjectsCol.find(filter).sort({ createdAt: -1 }).toArray();
 
-    // Get question counts for each subject
     const subjectsWithCounts = await Promise.all(
       subjects.map(async (subject) => {
-        // Build question filter - CRITICAL FIX
+        // ✅ FIX: Case-insensitive match so question counts are always accurate
+        //         even if questions were imported with different casing.
         const questionFilter: any = {
-          subject: subject.name,
-          course: subject.course,
+          subject: { $regex: `^${esc(subject.name)}$`, $options: "i" },
+          course:  subject.course,
         };
-        
-        // For BSABEN subjects, also filter by area when counting questions
+
         if (subject.course === "BSABEN" && subject.area) {
-          questionFilter.area = subject.area;
+          questionFilter.area = { $regex: `^${esc(subject.area)}$`, $options: "i" };
         }
 
         const questionCount = await questionsCol.countDocuments(questionFilter);
@@ -52,10 +49,7 @@ export async function GET(request: NextRequest) {
       })
     );
 
-    return NextResponse.json({
-      subjects: subjectsWithCounts,
-      total: subjects.length,
-    });
+    return NextResponse.json({ subjects: subjectsWithCounts, total: subjects.length });
   } catch (error) {
     console.error("GET /api/subjects error:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

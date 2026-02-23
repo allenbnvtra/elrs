@@ -14,9 +14,6 @@ function normalizeText(text: string): string {
   return text.trim().toLowerCase().replace(/\s+/g, " ");
 }
 
-// Create a unique key for duplicate detection
-// For BSABEN: course + area + subject + questionText
-// For BSGE: course + subject + questionText
 function createDuplicateKey(course: string, area: string | undefined, subject: string, questionText: string): string {
   if (course === "BSABEN") {
     return `${course.toUpperCase()}::${normalizeText(area || "")}::${normalizeText(subject)}::${normalizeText(questionText)}`;
@@ -42,12 +39,10 @@ function validateRow(row: ImportRow, rowNum: number, course: CourseType): string
   if (!String(row.category ?? "").trim()) return `Row ${rowNum}: category is required`;
   if (!String(row.subject ?? "").trim()) return `Row ${rowNum}: subject is required`;
 
-  // BSABEN requires area
   if (course === "BSABEN" && !String(row.area ?? "").trim()) {
     return `Row ${rowNum}: area is required for BSABEN questions`;
   }
 
-  // If answer is C or D, the corresponding option must exist
   if (answer === "C" && !String(row.option_c ?? "").trim()) {
     return `Row ${rowNum}: option_c is required when correct_answer is C`;
   }
@@ -58,7 +53,6 @@ function validateRow(row: ImportRow, rowNum: number, course: CourseType): string
   return null;
 }
 
-// Helper function to find or create an area (case-insensitive)
 async function ensureAreaExists(
   db: any,
   areaName: string,
@@ -67,18 +61,14 @@ async function ensureAreaExists(
   userName: string
 ): Promise<string> {
   const areasCol = db.collection("areas");
-  
-  // Check if area already exists (case-insensitive)
+
   const existing = await areasCol.findOne({
     course,
-    name: { $regex: `^${areaName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, $options: "i" }
+    name: { $regex: `^${areaName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, $options: "i" },
   });
-  
-  if (existing) {
-    return existing.name; // Return the existing name (preserves original casing)
-  }
-  
-  // Create new area
+
+  if (existing) return existing.name;
+
   const now = new Date();
   await areasCol.insertOne({
     name: areaName,
@@ -88,11 +78,10 @@ async function ensureAreaExists(
     createdAt: now,
     updatedAt: now,
   });
-  
+
   return areaName;
 }
 
-// Helper function to find or create a subject (case-insensitive)
 async function ensureSubjectExists(
   db: any,
   subjectName: string,
@@ -102,36 +91,34 @@ async function ensureSubjectExists(
   userName: string
 ): Promise<string> {
   const subjectsCol = db.collection("subjects");
-  
-  // Build filter for checking existing subject
+
+  // Build filter — for BSABEN, scope by area too
   const filter: any = {
     course,
-    name: { $regex: `^${subjectName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, $options: "i" }
+    name: { $regex: `^${subjectName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, $options: "i" },
   };
-  
-  // For BSABEN, also match by area
+
   if (course === "BSABEN" && area) {
     filter.area = { $regex: `^${area.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, $options: "i" };
   }
-  
+
   const existing = await subjectsCol.findOne(filter);
-  
-  if (existing) {
-    return existing.name; // Return the existing name (preserves original casing)
-  }
-  
+  if (existing) return existing.name;
+
   // Create new subject
   const now = new Date();
   await subjectsCol.insertOne({
     name: subjectName,
+    description: undefined,
     course,
     area: course === "BSABEN" ? area : undefined,
+    timer: 0, // ✅ Required field — default to no timer
     createdBy: new ObjectId(userId),
     createdByName: userName,
     createdAt: now,
     updatedAt: now,
   });
-  
+
   return subjectName;
 }
 
@@ -164,14 +151,12 @@ export async function POST(request: NextRequest) {
     const questionsCol = db.collection<Question>("questions");
     const usersCol = db.collection<User>("users");
 
-    // Auth check
     const user = await usersCol.findOne({ _id: new ObjectId(userId) });
     if (!user) return NextResponse.json({ error: "User not found" }, { status: 404 });
     if (user.role !== "admin" && user.role !== "faculty") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
     }
 
-    // Parse Excel
     const arrayBuffer = await file.arrayBuffer();
     const workbook = XLSX.read(new Uint8Array(arrayBuffer), { type: "array" });
     const sheetName = workbook.SheetNames.find((n) => n.toLowerCase() !== "instructions");
@@ -200,15 +185,12 @@ export async function POST(request: NextRequest) {
       duplicatesInDb: [],
     };
 
-    // Track seen questions in this file
     const seenInFile = new Map<string, number>();
 
-    // Pre-load all existing questions from DB for this course
     const existingQuestions = await questionsCol
       .find({ course }, { projection: { course: 1, area: 1, subject: 1, questionText: 1 } })
       .toArray();
 
-    // Build a Set of unique keys for fast duplicate lookup
     const existingKeys = new Set<string>(
       existingQuestions.map((q) =>
         createDuplicateKey(q.course, q.area, q.subject, q.questionText)
@@ -218,16 +200,16 @@ export async function POST(request: NextRequest) {
     const toInsert: Omit<Question, "_id">[] = [];
     const now = new Date();
 
-    // Track unique areas and subjects to create
+    // ✅ FIX: Use compound key (area::subject) so BSABEN subjects with the
+    //         same name but different areas are tracked as separate entries.
     const areasToEnsure = new Set<string>();
-    const subjectsToEnsure = new Map<string, string | undefined>(); // subject name -> area
+    const subjectsToEnsure = new Map<string, { subjectName: string; area: string | undefined }>();
 
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
-      const rowNum = i + 2; // Excel rows start at 2 (row 1 = headers)
+      const rowNum = i + 2;
       const rawText = String(row.question_text ?? "").trim();
 
-      // Validation
       const validationError = validateRow(row, rowNum, course);
       if (validationError) {
         result.errors.push({ row: rowNum, reason: validationError, text: rawText });
@@ -237,18 +219,19 @@ export async function POST(request: NextRequest) {
 
       const area = course === "BSABEN" ? String(row.area ?? "").trim() : undefined;
       const subject = String(row.subject ?? "").trim();
-      
-      // Collect areas and subjects to ensure they exist
-      if (area) {
-        areasToEnsure.add(area);
-      }
-      subjectsToEnsure.set(subject, area);
-      
+
+      // ✅ FIX: Compound key so BSABEN area+subject pairs are unique
+      const subjectKey = course === "BSABEN"
+        ? `${normalizeText(area || "")}::${normalizeText(subject)}`
+        : normalizeText(subject);
+
+      if (area) areasToEnsure.add(area);
+      subjectsToEnsure.set(subjectKey, { subjectName: subject, area });
+
       const duplicateKey = createDuplicateKey(course, area, subject, rawText);
 
-      // Duplicate within file
       if (seenInFile.has(duplicateKey)) {
-        const displayText = course === "BSABEN" 
+        const displayText = course === "BSABEN"
           ? `[${area}/${subject}] ${rawText.substring(0, 80)}`
           : `[${subject}] ${rawText.substring(0, 80)}`;
         result.duplicatesInFile.push({ row: rowNum, text: displayText });
@@ -256,9 +239,8 @@ export async function POST(request: NextRequest) {
         continue;
       }
 
-      // Duplicate in database
       if (existingKeys.has(duplicateKey)) {
-        const displayText = course === "BSABEN" 
+        const displayText = course === "BSABEN"
           ? `[${area}/${subject}] ${rawText.substring(0, 80)}`
           : `[${subject}] ${rawText.substring(0, 80)}`;
         result.duplicatesInDb.push({ row: rowNum, text: displayText });
@@ -278,10 +260,10 @@ export async function POST(request: NextRequest) {
         correctAnswer: String(row.correct_answer ?? "").trim().toUpperCase() as CorrectAnswer,
         difficulty: String(row.difficulty ?? "").trim() as DifficultyType,
         category: String(row.category ?? "").trim(),
-        course: course,
-        area: area,  // NEW: Only set for BSABEN
-        isActive: row.isActive !== false, // Default to true if not specified
-        subject: subject,
+        course,
+        area,
+        isActive: row.isActive !== false,
+        subject,
         explanation: row.explanation ? String(row.explanation).trim() : undefined,
         createdBy: new ObjectId(userId),
         createdByName: user.name,
@@ -290,19 +272,18 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Ensure all areas exist (for BSABEN)
+    // ✅ Ensure all areas exist (BSABEN only)
     if (course === "BSABEN") {
       for (const areaName of areasToEnsure) {
         await ensureAreaExists(db, areaName, course, userId, user.name);
       }
     }
-    
-    // Ensure all subjects exist
-    for (const [subjectName, areaName] of subjectsToEnsure.entries()) {
-      await ensureSubjectExists(db, subjectName, course, areaName, userId, user.name);
+
+    // ✅ Ensure all subjects exist — now correctly handles BSABEN area+subject pairs
+    for (const { subjectName, area } of subjectsToEnsure.values()) {
+      await ensureSubjectExists(db, subjectName, course, area, userId, user.name);
     }
 
-    // Bulk insert valid questions
     if (toInsert.length > 0) {
       await questionsCol.insertMany(toInsert as Question[]);
       result.imported = toInsert.length;
