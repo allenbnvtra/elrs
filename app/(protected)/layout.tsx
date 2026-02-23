@@ -666,7 +666,7 @@ export default function ProtectedLayout({
         </header>
 
         {/* MAIN PAGE AREA */}
-        <main className="p-2 xs:p-3 sm:p-4 md:p-6 lg:p-8 xl:p-10 max-w-[1600px] mx-auto min-h-[calc(100vh-56px)] xs:min-h-[calc(100vh-64px)] sm:min-h-[calc(100vh-80px)]">
+        <main className="p-2 xs:p-3 sm:p-4 md:p-6 lg:p-8 xl:p-10 max-w-[1600px] mx-auto min-h-[calc(100vh-56px)] xs:min-h-[calc(100vh-64px)] sm:min-h-[calc(100vh-80px)] bg-[#f5f5f5]">
           <div className="animate-in fade-in slide-in-from-bottom-3 duration-700 ease-out">
             {children}
           </div>
