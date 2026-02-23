@@ -28,7 +28,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body
-        className={`${inter.variable} ${firaCode.variable} text-foreground font-sans antialiased`}
+        className={`${inter.variable} ${firaCode.variable} text-foreground bg-[#f5f5f5] font-sans antialiased`}
       >
         <AuthProvider>
           {children}
