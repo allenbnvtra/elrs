@@ -9,12 +9,8 @@ export async function POST(request: NextRequest) {
     const { examSessionId, userId, violationType, timestamp } = body;
 
     if (!examSessionId || !userId || !violationType) {
-      return NextResponse.json(
-        { error: "Missing required fields" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
-
     if (!ObjectId.isValid(examSessionId) || !ObjectId.isValid(userId)) {
       return NextResponse.json({ error: "Invalid ID format" }, { status: 400 });
     }
@@ -42,7 +38,6 @@ export async function POST(request: NextRequest) {
       timestamp: timestamp ? new Date(timestamp) : new Date(),
     };
 
-    // Use the DB's stored violationCount as source of truth
     const newViolationCount = (examSession.violationCount ?? 0) + 1;
     const shouldAutoSubmit  = newViolationCount >= 3;
 
@@ -52,12 +47,8 @@ export async function POST(request: NextRequest) {
         $push: { violations: violation } as any,
         $set: {
           violationCount: newViolationCount,
-          updatedAt: new Date(),
-          // Pre-flag the session so submit route picks it up correctly
-          ...(shouldAutoSubmit && {
-            wasFlagged: true,
-            status:     "flagged",
-          }),
+          updatedAt:      new Date(),
+          ...(shouldAutoSubmit && { wasFlagged: true }),
         },
       }
     );

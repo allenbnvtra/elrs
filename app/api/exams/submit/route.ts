@@ -4,8 +4,8 @@ import clientPromise, { dbName } from "@/lib/mongodb";
 import { Question } from "@/models/Questions";
 
 // ─── POST /api/exams/submit ────────────────────────────────────────────────────
-// Submits exam answers and returns results
-// Works for: manual submit, timer expiry, and violation auto-submit (answers may be partial/empty)
+// Submits exam answers and returns results.
+// Works for: manual submit, timer expiry, and violation auto-submit (answers may be partial/empty).
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -17,7 +17,6 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
-
     if (!ObjectId.isValid(examSessionId) || !ObjectId.isValid(userId)) {
       return NextResponse.json({ error: "Invalid ID format" }, { status: 400 });
     }
@@ -37,8 +36,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Exam session not found" }, { status: 404 });
     }
 
-    // Guard against duplicate submissions (completed OR already flagged+submitted)
-    if (examSession.status === "completed" || examSession.status === "flagged") {
+    // ✅ Block only if already fully scored (completedAt is set).
+    //    "in-progress" → normal submit.
+    //    "flagged" with NO completedAt → violation auto-submit arriving here for the first time → allow.
+    //    "flagged" with completedAt set → already scored → block.
+    //    "completed" → block.
+    const alreadyScored =
+      examSession.completedAt !== null &&
+      examSession.completedAt !== undefined &&
+      (examSession.status === "completed" || examSession.status === "flagged");
+
+    if (alreadyScored) {
       return NextResponse.json({ error: "Exam already submitted" }, { status: 400 });
     }
 
@@ -46,7 +54,7 @@ export async function POST(request: NextRequest) {
     const violations     = examSession.violations     ?? [];
     const violationCount = examSession.violationCount ?? 0;
 
-    // Answers may be partial (timer expiry) or empty (immediate auto-submit)
+    // Answers may be partial (timer/violation) or empty (immediate auto-submit)
     const finalAnswers: Record<string, string> = answers ?? {};
 
     // ── Fetch questions ──────────────────────────────────────────────────────
@@ -54,11 +62,11 @@ export async function POST(request: NextRequest) {
       .find({ _id: { $in: examSession.questionIds.map((id: any) => new ObjectId(id)) } })
       .toArray();
 
-    // ── Grade ────────────────────────────────────────────────────────────────
+    // ── Grade — score is based only on answered questions ────────────────────
     let correctCount = 0;
     const results = questions.map((q) => {
       const userAnswer = finalAnswers[q._id!.toString()] ?? null;
-      const isCorrect  = userAnswer === q.correctAnswer;
+      const isCorrect  = userAnswer !== null && userAnswer === q.correctAnswer;
       if (isCorrect) correctCount++;
       return {
         questionId:    q._id,
@@ -68,7 +76,7 @@ export async function POST(request: NextRequest) {
         isCorrect,
         difficulty:    q.difficulty,
         category:      q.category,
-        subject:       q.subject,   // included for BSABEN area exam breakdowns
+        subject:       q.subject,
         explanation:   q.explanation,
         options: {
           A: q.optionA,
@@ -79,14 +87,14 @@ export async function POST(request: NextRequest) {
       };
     });
 
-    const total       = questions.length;
-    const score       = total > 0 ? Math.round((correctCount / total) * 100) : 0;
-    const completedAt = new Date();
+    const total        = questions.length;
+    const score        = total > 0 ? Math.round((correctCount / total) * 100) : 0;
+    const completedAt  = new Date();
     const timeTakenSec = Math.round(
       (completedAt.getTime() - new Date(examSession.startedAt).getTime()) / 1000
     );
 
-    // Final status: flagged if wasFlagged (violation auto-submit), else completed
+    // Final status: "flagged" if auto-submitted via violations, else "completed"
     const finalStatus = wasFlagged ? "flagged" : "completed";
 
     // ── Update session ───────────────────────────────────────────────────────
@@ -119,7 +127,7 @@ export async function POST(request: NextRequest) {
       percentage:     score,
       startedAt:      examSession.startedAt,
       completedAt,
-      timeTaken:      timeTakenSec,           // seconds
+      timeTaken:      timeTakenSec,
       results,
       violations,
       violationCount,
