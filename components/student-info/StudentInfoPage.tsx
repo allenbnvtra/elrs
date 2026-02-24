@@ -1,10 +1,11 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   Search, Download,
   ChevronLeft, ChevronRight,
   GraduationCap, MoreHorizontal, X, Loader2, AlertCircle,
+  Mail, Copy, Eye, CheckCheck, ShieldOff, ShieldCheck,
 } from "lucide-react";
 import { useAuth } from "@/contexts/authContext";
 
@@ -14,7 +15,7 @@ interface Student {
   email: string;
   studentNumber: string;
   course: "BSABEN" | "BSGE";
-  status: "pending" | "approved" | "rejected";
+  status: "pending" | "approved" | "rejected" | "deactivated";
   createdAt: string;
 }
 
@@ -39,6 +40,265 @@ const COURSE_OPTIONS: { value: CourseFilter; label: string }[] = [
   { value: "BSGE",   label: "BSGE" },
 ];
 
+// ─── Student Detail Modal ─────────────────────────────────────────────────────
+function StudentDetailModal({ student, onClose }: { student: Student; onClose: () => void }) {
+  const [copied, setCopied] = useState<string | null>(null);
+
+  const copyToClipboard = async (text: string, key: string) => {
+    await navigator.clipboard.writeText(text);
+    setCopied(key);
+    setTimeout(() => setCopied(null), 2000);
+  };
+
+  // Close on Escape
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const fields = [
+    { label: "Full Name",       value: student.name,          key: "name" },
+    { label: "Student Number",  value: student.studentNumber,  key: "sn" },
+    { label: "Email",           value: student.email,          key: "email" },
+    { label: "Course",          value: student.course,         key: "course" },
+    { label: "Status",          value: student.status,         key: "status" },
+    { label: "Joined",          value: new Date(student.createdAt).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }), key: "date" },
+  ];
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6">
+      {/* Backdrop */}
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
+
+      {/* Panel */}
+      <div className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+        {/* Header */}
+        <div className="bg-gradient-to-br from-[#7d1a1a] to-[#3d0d0d] p-6 text-white">
+          <div className="flex items-start justify-between mb-4">
+            <div className="w-14 h-14 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center text-white font-black text-xl border-2 border-white/30">
+              {student.name.charAt(0)}
+            </div>
+            <button
+              onClick={onClose}
+              className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 transition-colors"
+            >
+              <X size={16} />
+            </button>
+          </div>
+          <h2 className="text-xl font-black leading-tight">{student.name}</h2>
+          <p className="text-white/70 text-sm font-bold mt-0.5">{student.studentNumber}</p>
+          <div className="flex items-center gap-2 mt-3">
+            <span className="text-[10px] font-black uppercase tracking-widest bg-white/15 px-2.5 py-1 rounded-full border border-white/20">
+              {student.course}
+            </span>
+            <span className="text-[10px] font-black uppercase tracking-widest bg-emerald-500/30 text-emerald-200 px-2.5 py-1 rounded-full border border-emerald-400/30">
+              {student.status}
+            </span>
+          </div>
+        </div>
+
+        {/* Body */}
+        <div className="p-5 space-y-2">
+          {fields.map(({ label, value, key }) => (
+            <div
+              key={key}
+              className="flex items-center justify-between py-2.5 px-3 rounded-xl hover:bg-gray-50 group transition-colors"
+            >
+              <div>
+                <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-0.5">{label}</p>
+                <p className="text-sm font-bold text-gray-800">{value}</p>
+              </div>
+              {["name", "sn", "email"].includes(key) && (
+                <button
+                  onClick={() => copyToClipboard(value, key)}
+                  className="opacity-0 group-hover:opacity-100 p-1.5 rounded-lg text-gray-400 hover:text-[#7d1a1a] hover:bg-[#7d1a1a]/5 transition-all"
+                  aria-label={`Copy ${label}`}
+                >
+                  {copied === key ? <CheckCheck size={14} className="text-emerald-500" /> : <Copy size={14} />}
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+
+        {/* Footer */}
+        <div className="px-5 pb-5">
+          <button
+            onClick={onClose}
+            className="w-full py-3 rounded-xl border-2 border-gray-200 text-sm font-bold text-gray-600 hover:border-[#7d1a1a] hover:text-[#7d1a1a] transition-all"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Confirm Deactivate Dialog ─────────────────────────────────────────────────
+function ConfirmDialog({
+  student,
+  action,
+  onConfirm,
+  onCancel,
+  loading,
+}: {
+  student: Student;
+  action: "deactivate" | "activate";
+  onConfirm: () => void;
+  onCancel: () => void;
+  loading: boolean;
+}) {
+  const isDeactivate = action === "deactivate";
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onCancel} />
+      <div className="relative w-full max-w-sm bg-white rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+        <div className={`p-5 ${isDeactivate ? "bg-red-50 border-b border-red-100" : "bg-emerald-50 border-b border-emerald-100"}`}>
+          <div className={`w-10 h-10 rounded-full flex items-center justify-center mb-3 ${isDeactivate ? "bg-red-100" : "bg-emerald-100"}`}>
+            {isDeactivate
+              ? <ShieldOff size={18} className="text-red-600" />
+              : <ShieldCheck size={18} className="text-emerald-600" />}
+          </div>
+          <h3 className="text-base font-black text-gray-900">
+            {isDeactivate ? "Deactivate Student?" : "Activate Student?"}
+          </h3>
+          <p className="text-sm text-gray-500 mt-1">
+            {isDeactivate
+              ? <>This will revoke <span className="font-bold text-gray-700">{student.name}</span>'s access to the system. You can reactivate them later.</>
+              : <>This will restore <span className="font-bold text-gray-700">{student.name}</span>'s access to the system.</>}
+          </p>
+        </div>
+        <div className="p-4 flex gap-2">
+          <button
+            onClick={onCancel}
+            className="flex-1 py-2.5 rounded-xl border-2 border-gray-200 text-sm font-bold text-gray-600 hover:border-gray-300 transition-all"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            disabled={loading}
+            className={`flex-1 py-2.5 rounded-xl text-sm font-bold text-white transition-all flex items-center justify-center gap-2 disabled:opacity-60 cursor-pointer ${
+              isDeactivate
+                ? "bg-red-600 hover:bg-red-700"
+                : "bg-emerald-600 hover:bg-emerald-700"
+            }`}
+          >
+            {loading
+              ? <Loader2 size={14} className="animate-spin" />
+              : isDeactivate ? "Yes, Deactivate" : "Yes, Activate"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Row Action Dropdown ───────────────────────────────────────────────────────
+function ActionDropdown({
+  student,
+  onViewDetails,
+  onStatusChange,
+}: {
+  student: Student;
+  onViewDetails: () => void;
+  onStatusChange: (student: Student, action: "deactivate" | "activate") => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [copied, setCopied] = useState<string | null>(null);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    if (open) document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  const copy = async (text: string, key: string) => {
+    await navigator.clipboard.writeText(text);
+    setCopied(key);
+    setTimeout(() => setCopied(null), 2000);
+  };
+
+  const isDeactivated = student.status === "deactivated";
+
+  const actions = [
+    {
+      icon: Eye,
+      label: "View Profile",
+      onClick: () => { setOpen(false); onViewDetails(); },
+    },
+    {
+      icon: copied === "email" ? CheckCheck : Mail,
+      label: copied === "email" ? "Copied!" : "Copy Email",
+      onClick: () => copy(student.email, "email"),
+      iconClass: copied === "email" ? "text-emerald-500" : "",
+    },
+    {
+      icon: copied === "sn" ? CheckCheck : Copy,
+      label: copied === "sn" ? "Copied!" : "Copy Student No.",
+      onClick: () => copy(student.studentNumber, "sn"),
+      iconClass: copied === "sn" ? "text-emerald-500" : "",
+    },
+    // separator handled by index in render
+    {
+      icon: isDeactivated ? ShieldCheck : ShieldOff,
+      label: isDeactivated ? "Activate Student" : "Deactivate Student",
+      onClick: () => {
+        setOpen(false);
+        onStatusChange(student, isDeactivated ? "activate" : "deactivate");
+      },
+      iconClass: isDeactivated ? "text-emerald-500" : "text-red-400",
+      labelClass: isDeactivated ? "!text-emerald-600" : "!text-red-500",
+      danger: true,
+    },
+  ];
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className={`p-2 rounded-lg transition-all cursor-pointer ${
+          open ? "bg-[#7d1a1a]/10 text-[#7d1a1a]" : "text-gray-400 hover:text-[#7d1a1a] hover:bg-[#7d1a1a]/5"
+        }`}
+        aria-label="More options"
+      >
+        <MoreHorizontal size={18} />
+      </button>
+
+      {open && (
+        <div className="absolute right-0 top-full mt-1.5 z-30 w-56 bg-white rounded-xl border border-gray-200 shadow-xl shadow-gray-200/60 overflow-hidden animate-in fade-in zoom-in-95 duration-150 origin-top-right">
+          <div className="px-3 py-2 border-b border-gray-100">
+            <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest truncate">{student.name}</p>
+          </div>
+          {actions.map(({ icon: Icon, label, onClick, iconClass, labelClass, danger }, idx) => (
+            <React.Fragment key={label}>
+              {/* Separator before the danger action */}
+              {danger && <div className="border-t border-gray-100 my-1" />}
+              <button
+                onClick={onClick}
+                className={`w-full flex items-center gap-2.5 px-3 py-2.5 text-sm font-semibold transition-colors group cursor-pointer ${
+                  danger
+                    ? "text-gray-700 hover:bg-red-50"
+                    : "text-gray-700 hover:bg-gray-50 hover:text-[#7d1a1a]"
+                }`}
+              >
+                <Icon size={15} className={`text-gray-400 transition-colors ${iconClass ?? ""}`} />
+                <span className={labelClass ?? ""}>{label}</span>
+              </button>
+            </React.Fragment>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Main Page ────────────────────────────────────────────────────────────────
 export default function StudentInfoPage() {
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
@@ -51,13 +311,14 @@ export default function StudentInfoPage() {
   const [loading, setLoading]               = useState(false);
   const [error, setError]                   = useState("");
   const [currentPage, setCurrentPage]       = useState(1);
+  const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
+  const [confirmAction, setConfirmAction] = useState<{ student: Student; action: "deactivate" | "activate" } | null>(null);
+  const [actionLoading, setActionLoading] = useState(false);
 
   const fetchStudents = async () => {
     if (!user?.id) return;
-
     setLoading(true);
     setError("");
-
     try {
       const params = new URLSearchParams({
         userId: user.id,
@@ -65,19 +326,12 @@ export default function StudentInfoPage() {
         page: String(currentPage),
         limit: "50",
       });
-
-      // Only send course filter for admin — backend scopes faculty automatically
-      if (isAdmin && selectedCourse !== "all") {
-        params.set("course", selectedCourse);
-      }
-
+      if (isAdmin && selectedCourse !== "all") params.set("course", selectedCourse);
       if (searchQuery) params.set("search", searchQuery);
 
       const res = await fetch(`/api/students?${params}`);
       const data = await res.json();
-
       if (!res.ok) { setError(data.error || "Failed to fetch students"); return; }
-
       setStudents(data.students);
       setPagination(data.pagination);
       setStats(data.stats);
@@ -88,16 +342,46 @@ export default function StudentInfoPage() {
     }
   };
 
-  // Reset to page 1 when filters change
-  useEffect(() => { setCurrentPage(1); }, [selectedCourse, searchQuery]);
+  const handleStatusChange = async () => {
+    if (!confirmAction || !user?.id) return;
+    setActionLoading(true);
+    try {
+      const res = await fetch("/api/students", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          requesterId: user.id,
+          studentId: confirmAction.student._id,
+          action: confirmAction.action,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setError(data.error || "Failed to update student"); return; }
 
+      // Optimistically update list — remove deactivated from "approved" view
+      setStudents((prev) =>
+        prev.map((s) =>
+          s._id === confirmAction.student._id ? { ...s, status: data.student.status } : s
+        ).filter((s) => s.status === (searchParams_status ?? "approved"))
+      );
+      setConfirmAction(null);
+    } catch {
+      setError("Failed to update student status");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // track current status filter for optimistic removal
+  const searchParams_status = "approved";
+
+  useEffect(() => { setCurrentPage(1); }, [selectedCourse, searchQuery]);
   useEffect(() => { fetchStudents(); }, [user?.id, selectedCourse, searchQuery, currentPage]);
 
   const handleExportCSV = () => {
     const headers = ["Student Number", "Name", "Email", "Course", "Status"];
     const rows = students.map((s) => [s.studentNumber, s.name, s.email, s.course, s.status]);
     const csv = [headers, ...rows].map((r) => r.join(",")).join("\n");
-
     const a = Object.assign(document.createElement("a"), {
       href: URL.createObjectURL(new Blob([csv], { type: "text/csv" })),
       download: `students_${selectedCourse}_${new Date().toISOString().split("T")[0]}.csv`,
@@ -109,12 +393,10 @@ export default function StudentInfoPage() {
   const buildPageList = () => {
     const t = pagination.totalPages;
     if (t <= 5) return Array.from({ length: t }, (_, i) => i + 1);
-    if (currentPage <= 3)       return [1, 2, 3, "...", t];
-    if (currentPage >= t - 2)   return [1, "...", t - 2, t - 1, t];
+    if (currentPage <= 3)     return [1, 2, 3, "...", t];
+    if (currentPage >= t - 2) return [1, "...", t - 2, t - 1, t];
     return [1, "...", currentPage - 1, currentPage, currentPage + 1, "...", t];
   };
-
-  // ─── Shared sub-components ────────────────────────────────────────────────
 
   const PaginationControls = ({ mobile = false }: { mobile?: boolean }) => (
     <div className={`flex items-center ${mobile ? "justify-center gap-1.5 xs:gap-2" : "gap-2"}`}>
@@ -122,7 +404,6 @@ export default function StudentInfoPage() {
         onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
         disabled={currentPage === 1}
         className={`${mobile ? "p-1.5 xs:p-2" : "p-2"} text-gray-400 hover:bg-white border border-gray-200 rounded-lg disabled:opacity-30 transition-all`}
-        aria-label="Previous page"
       >
         <ChevronLeft size={mobile ? 16 : 18} />
       </button>
@@ -148,14 +429,11 @@ export default function StudentInfoPage() {
         onClick={() => setCurrentPage((p) => Math.min(pagination.totalPages, p + 1))}
         disabled={currentPage === pagination.totalPages}
         className={`${mobile ? "p-1.5 xs:p-2" : "p-2"} text-gray-400 hover:bg-white border border-gray-200 rounded-lg disabled:opacity-30 transition-all`}
-        aria-label="Next page"
       >
         <ChevronRight size={mobile ? 16 : 18} />
       </button>
     </div>
   );
-
-  // ─── Render ───────────────────────────────────────────────────────────────
 
   return (
     <div className="space-y-4 xs:space-y-5 sm:space-y-6 animate-in fade-in duration-700">
@@ -173,7 +451,6 @@ export default function StudentInfoPage() {
             Student Registry
           </h1>
         </div>
-
         <button
           onClick={handleExportCSV}
           disabled={students.length === 0}
@@ -192,13 +469,12 @@ export default function StudentInfoPage() {
         </div>
       )}
 
-      {/* STATS STRIP */}
+      {/* STATS */}
       <div className={`grid gap-2 xs:gap-3 sm:gap-4 ${isAdmin ? "grid-cols-2 md:grid-cols-4" : "grid-cols-3"}`}>
         <div className="bg-white p-3 xs:p-4 rounded-xl xs:rounded-2xl border border-gray-200/60 shadow-sm">
           <p className="text-[8px] xs:text-[9px] sm:text-[10px] font-black text-gray-400 uppercase tracking-tighter truncate">Total Students</p>
           <p className="text-base xs:text-lg sm:text-xl font-black text-blue-600">{stats.totalStudents.toLocaleString()}</p>
         </div>
-        {/* Admin sees both course counts; faculty sees only their own */}
         {(isAdmin || (user as any)?.course === "BSABEN") && (
           <div className="bg-white p-3 xs:p-4 rounded-xl xs:rounded-2xl border border-gray-200/60 shadow-sm">
             <p className="text-[8px] xs:text-[9px] sm:text-[10px] font-black text-gray-400 uppercase tracking-tighter truncate">BSABEN Track</p>
@@ -219,7 +495,6 @@ export default function StudentInfoPage() {
 
       {/* SEARCH & FILTER */}
       <div className="flex flex-col gap-3 xs:gap-4 bg-white p-3 xs:p-4 rounded-xl xs:rounded-2xl border border-gray-200/60 shadow-sm">
-        {/* Course tabs — admin only */}
         {isAdmin && (
           <div className="flex bg-gray-100 p-0.5 xs:p-1 rounded-lg xs:rounded-xl w-full">
             {COURSE_OPTIONS.map(({ value, label }) => (
@@ -227,9 +502,7 @@ export default function StudentInfoPage() {
                 key={value}
                 onClick={() => setSelectedCourse(value)}
                 className={`flex-1 px-6 xs:px-8 sm:px-10 py-2 xs:py-2.5 rounded-md xs:rounded-lg text-[9px] xs:text-[10px] sm:text-[11px] font-black uppercase tracking-wider transition-all ${
-                  selectedCourse === value
-                    ? "bg-white text-[#7d1a1a] shadow-sm"
-                    : "text-gray-500 hover:text-gray-700"
+                  selectedCourse === value ? "bg-white text-[#7d1a1a] shadow-sm" : "text-gray-500 hover:text-gray-700"
                 }`}
               >
                 {label}
@@ -237,7 +510,6 @@ export default function StudentInfoPage() {
             ))}
           </div>
         )}
-
         <div className="relative w-full">
           <Search className="absolute left-2 xs:left-3 top-1/2 -translate-y-1/2 text-gray-400" size={14} />
           <input
@@ -248,11 +520,7 @@ export default function StudentInfoPage() {
             className="w-full pl-7 text-slate-800 xs:pl-10 pr-8 xs:pr-10 py-2 xs:py-2.5 bg-gray-50 border border-gray-200 rounded-lg xs:rounded-xl text-xs xs:text-sm focus:outline-none focus:ring-2 focus:ring-[#7d1a1a]/10 transition-all placeholder:text-[10px] xs:placeholder:text-xs"
           />
           {searchQuery && (
-            <button
-              onClick={() => setSearchQuery("")}
-              className="absolute right-2 xs:right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-1"
-              aria-label="Clear search"
-            >
+            <button onClick={() => setSearchQuery("")} className="absolute right-2 xs:right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-1">
               <X size={14} />
             </button>
           )}
@@ -309,12 +577,11 @@ export default function StudentInfoPage() {
                       </span>
                     </td>
                     <td className="px-8 py-5 text-right">
-                      <button
-                        className="p-2 text-gray-400 hover:text-[#7d1a1a] hover:bg-[#7d1a1a]/5 rounded-lg transition-all"
-                        aria-label="View details"
-                      >
-                        <MoreHorizontal size={18} />
-                      </button>
+                      <ActionDropdown
+                        student={student}
+                        onViewDetails={() => setSelectedStudent(student)}
+                        onStatusChange={(s, action) => setConfirmAction({ student: s, action })}
+                      />
                     </td>
                   </tr>
                 ))
@@ -375,13 +642,17 @@ export default function StudentInfoPage() {
               </div>
 
               <div className="flex items-center justify-between">
-                <button className="text-[10px] xs:text-xs font-bold text-[#7d1a1a] hover:underline">View Full Profile</button>
                 <button
-                  className="p-2 xs:p-2.5 text-gray-400 hover:text-[#7d1a1a] hover:bg-[#7d1a1a]/5 rounded-lg xs:rounded-xl transition-all active:scale-95"
-                  aria-label="More options"
+                  onClick={() => setSelectedStudent(student)}
+                  className="text-[10px] xs:text-xs font-bold text-[#7d1a1a] hover:underline"
                 >
-                  <MoreHorizontal size={16} />
+                  View Full Profile
                 </button>
+                <ActionDropdown
+                  student={student}
+                  onViewDetails={() => setSelectedStudent(student)}
+                  onStatusChange={(s, action) => setConfirmAction({ student: s, action })}
+                />
               </div>
             </div>
           ))
@@ -401,6 +672,25 @@ export default function StudentInfoPage() {
           </div>
         )}
       </div>
+
+      {/* STUDENT DETAIL MODAL */}
+      {selectedStudent && (
+        <StudentDetailModal
+          student={selectedStudent}
+          onClose={() => setSelectedStudent(null)}
+        />
+      )}
+
+      {/* CONFIRM DEACTIVATE / ACTIVATE DIALOG */}
+      {confirmAction && (
+        <ConfirmDialog
+          student={confirmAction.student}
+          action={confirmAction.action}
+          onConfirm={handleStatusChange}
+          onCancel={() => setConfirmAction(null)}
+          loading={actionLoading}
+        />
+      )}
     </div>
   );
 }

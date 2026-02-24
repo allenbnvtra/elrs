@@ -480,36 +480,6 @@ export default function Dashboard() {
           )}
         </div>
       </div>
-
-      {/* ── QUICK NAV ──────────────────────────────────────────────────────── */}
-      <div>
-        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3">Quick Access</p>
-        <div className={`grid grid-cols-2 sm:grid-cols-3 gap-3 ${isAdmin ? "lg:grid-cols-6" : "lg:grid-cols-4"}`}>
-          {[
-            { label: "Question Bank", href: "/admin/questions", icon: HelpCircle, color: "text-[#7d1a1a]", bg: "bg-[#7d1a1a]/5" },
-            { label: "Review Materials", href: "/admin/materials", icon: BookOpen, color: "text-purple-600", bg: "bg-purple-50" },
-            { label: "Results", href: "/admin/results", icon: BarChart3, color: "text-indigo-600", bg: "bg-indigo-50" },
-            { label: "Scores", href: "/admin/scores", icon: Award, color: "text-amber-600", bg: "bg-amber-50" },
-            ...(isAdmin ? [
-              { label: "Coordinators", href: "/admin/coordinators", icon: ShieldCheck, color: "text-teal-600", bg: "bg-teal-50" },
-              { label: "Archive", href: "/admin/archives", icon: Archive, color: "text-gray-600", bg: "bg-gray-100" },
-            ] : []),
-          ].map(({ label, href, icon: Icon, color, bg }) => (
-            <a key={href} href={href}
-              className="bg-white border border-gray-200 rounded-2xl p-4 flex flex-col items-start gap-3 hover:shadow-md hover:-translate-y-0.5 transition-all group">
-              <div className={`p-2 rounded-xl ${bg} ${color} group-hover:scale-110 transition-transform`}>
-                <Icon size={18} />
-              </div>
-              <div>
-                <p className="text-xs font-black text-gray-800 leading-tight">{label}</p>
-                <p className="text-[9px] text-gray-400 font-medium mt-0.5 flex items-center gap-0.5">
-                  Manage <ChevronRight size={10} />
-                </p>
-              </div>
-            </a>
-          ))}
-        </div>
-      </div>
     </div>
   );
 }

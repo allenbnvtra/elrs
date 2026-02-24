@@ -631,7 +631,7 @@ export default function ProtectedLayout({
                     {/* Menu Items */}
                     <div className="p-2">
                       <Link
-                        href={`${getBasePath()}/profile`}
+                        href={`${getBasePath()}/settings`}
                         className="flex items-center gap-3 px-4 py-3 rounded-lg text-gray-700 hover:bg-gray-50 transition-all group"
                         onClick={() => setIsUserMenuOpen(false)}
                       >

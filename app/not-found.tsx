@@ -1,13 +1,48 @@
 "use client";
 
-import React from "react";
+import React, { useMemo } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { ArrowLeft, Home, Search, GraduationCap } from "lucide-react";
+import { ArrowLeft, Home, GraduationCap } from "lucide-react";
+import { useAuth } from "@/contexts/authContext"; // adjust if your hook differs
 
 const primaryGradient = { background: "linear-gradient(135deg, #7d1a1a 0%, #5a1313 100%)" };
 
+// ─── Role → base path mapping ───────────────────────────────────────────────
+const ROLE_BASE: Record<string, string> = {
+  admin:   "/admin/dashboard",
+  faculty: "/faculty/dashboard",
+  student: "/student/dashboard",   // keep existing student path
+};
+
+const ROLE_LINKS: Record<string, { label: string; href: string }[]> = {
+  admin: [
+    { label: "Student Info",       href: "/admin/student-info" },
+    { label: "Results",     href: "/admin/results" },
+    { label: "Settings",    href: "/admin/settings" },
+    { label: "Sign In",     href: "/login" },
+  ],
+  faculty: [
+    { label: "Student Info",  href: "/faculty/student-info" },
+    { label: "My Profile",  href: "/faculty/settings" },
+    { label: "Sign In",     href: "/login" },
+  ],
+  student: [
+    { label: "Review Materials", href: "/student/review-materials" },
+    { label: "My Profile",       href: "/student/settings" },
+    { label: "Sign In",          href: "/login" },
+  ],
+};
+
 export default function NotFound() {
+  const { user } = useAuth(); // { role: "admin" | "faculty" | "student" | undefined }
+
+  const role = (user?.role ?? "student").toLowerCase();
+  const base = ROLE_BASE[role] ?? "/dashboard";
+  const links = ROLE_LINKS[role] ?? ROLE_LINKS.student;
+
+  const dashboardHref = `${base}`;
+
   return (
     <div className="min-h-screen w-full flex flex-col md:flex-row bg-[#f8f9fa]">
 
@@ -36,13 +71,7 @@ export default function NotFound() {
         <div className="relative z-10">
           <div className="flex items-center gap-3 mb-12">
             <div className="flex bg-white/20 p-2 rounded-lg backdrop-blur-sm">
-              <Image
-                src="/basc_logo.png"
-                alt="Logo"
-                width={60}
-                height={60}
-                className="object-contain"
-              />
+              <Image src="/basc_logo.png" alt="Logo" width={60} height={60} className="object-contain" />
             </div>
             <span className="text-2xl font-bold tracking-tight">BSAU ELRS</span>
           </div>
@@ -73,20 +102,8 @@ export default function NotFound() {
 
           {/* Logo row */}
           <div className="flex justify-center md:justify-start gap-4 mb-10">
-            <Image
-              src="/engr.png"
-              alt="Logo"
-              width={60}
-              height={60}
-              className="object-contain opacity-80"
-            />
-            <Image
-              src="/syslogo.png"
-              alt="Logo"
-              width={50}
-              height={50}
-              className="object-contain"
-            />
+            <Image src="/engr.png"    alt="Logo" width={60} height={60} className="object-contain opacity-80" />
+            <Image src="/syslogo.png" alt="Logo" width={50} height={50} className="object-contain" />
           </div>
 
           {/* 404 badge (mobile only) */}
@@ -100,9 +117,7 @@ export default function NotFound() {
           </div>
 
           <div className="mb-8 text-center md:text-left">
-            <h2 className="text-3xl font-bold text-[#1a1a1a] mb-3">
-              Page Not Found
-            </h2>
+            <h2 className="text-3xl font-bold text-[#1a1a1a] mb-3">Page Not Found</h2>
             <p className="text-[#6c757d] leading-relaxed">
               We couldn't find the page you were looking for. It may have been
               deleted, renamed, or never existed in the first place.
@@ -112,16 +127,14 @@ export default function NotFound() {
           {/* Divider with error code */}
           <div className="flex items-center gap-4 mb-8">
             <div className="flex-1 h-px bg-[#dee2e6]" />
-            <span className="text-xs font-bold text-[#adb5bd] uppercase tracking-widest">
-              Error 404
-            </span>
+            <span className="text-xs font-bold text-[#adb5bd] uppercase tracking-widest">Error 404</span>
             <div className="flex-1 h-px bg-[#dee2e6]" />
           </div>
 
           {/* Action buttons */}
           <div className="space-y-3">
             <Link
-              href="/dashboard"
+              href={dashboardHref}
               className="w-full group flex items-center justify-center gap-2 py-4 px-6 rounded-xl text-white font-bold text-base transition-all active:scale-[0.98] shadow-[0_4px_16px_rgba(125,26,26,0.2)] hover:shadow-[0_8px_24px_rgba(125,26,26,0.3)]"
               style={primaryGradient}
             >
@@ -129,13 +142,13 @@ export default function NotFound() {
               <span>Go to Dashboard</span>
             </Link>
 
-            <Link
-              href="javascript:history.back()"
+            <button
+              onClick={() => window.history.back()}
               className="w-full flex items-center justify-center gap-2 py-4 px-6 rounded-xl font-bold text-base border-2 border-[#dee2e6] text-[#495057] hover:border-[#7d1a1a] hover:text-[#7d1a1a] transition-all active:scale-[0.98] bg-white"
             >
               <ArrowLeft size={18} />
               <span>Go Back</span>
-            </Link>
+            </button>
           </div>
 
           {/* Helpful links */}
@@ -144,12 +157,7 @@ export default function NotFound() {
               Quick Links
             </p>
             <div className="grid grid-cols-2 gap-2">
-              {[
-                { label: "Review Materials", href: "/dashboard/review-materials" },
-                { label: "Practice Exams",   href: "/dashboard/exams" },
-                { label: "My Profile",       href: "/dashboard/profile" },
-                { label: "Sign In",          href: "/login" },
-              ].map(({ label, href }) => (
+              {links.map(({ label, href }) => (
                 <Link
                   key={href}
                   href={href}
