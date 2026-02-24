@@ -20,7 +20,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
-type UserType = "student" | "faculty" | "admin";
+type UserType = "student" | "faculty";
 type CourseType = "BSGE" | "BSABEN";
 
 const SignUpPage: React.FC = () => {
@@ -198,7 +198,6 @@ const SignUpPage: React.FC = () => {
                 >
                   <option value="student">Student</option>
                   <option value="faculty">Faculty / Coordinator</option>
-                  <option value="admin">Administrator</option>
                 </select>
               </div>
               {userType === "faculty" && (
